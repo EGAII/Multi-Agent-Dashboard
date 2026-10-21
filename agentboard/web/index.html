@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgentBoard</title>
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    try { const t = localStorage.getItem("ab.theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+</head>
+<body>
+  <header class="titlebar pywebview-drag-region" id="titlebar">
+    <div class="wordmark pywebview-drag-region">AgentBoard<span class="live" id="live" title="Live"></span></div>
+    <button class="iconbtn" id="btn-theme" title="Switch light or dark" aria-label="Switch light or dark" data-icon="moon"></button>
+    <button class="iconbtn" id="btn-pin" title="Keep on top" aria-label="Keep on top" aria-pressed="true" data-icon="push-pin"></button>
+    <button class="iconbtn" id="btn-settings" title="Settings file" aria-label="Open settings file" data-icon="gear-six"></button>
+    <span class="sep" aria-hidden="true"></span>
+    <button class="iconbtn" id="btn-min" title="Minimise" aria-label="Minimise" data-icon="minus"></button>
+    <button class="iconbtn" id="btn-max" title="Maximise" aria-label="Maximise" aria-pressed="false" data-icon="corners-out"></button>
+    <button class="iconbtn close" id="btn-close" title="Close" aria-label="Close" data-icon="x"></button>
+  </header>
+
+  <div class="toolbar pywebview-drag-region" id="toolbar">
+    <div class="segmented" role="tablist" aria-label="Pages">
+      <button role="tab" id="tab-usage" aria-controls="page-usage" aria-selected="true" data-page="usage"><span class="icon" data-icon="chart-donut"></span>Usage</button>
+      <button role="tab" id="tab-agents" aria-controls="page-agents" aria-selected="false" data-page="agents"><span class="icon" data-icon="stack"></span>Agents<span class="count mono" id="agent-count">0</span></button>
+    </div>
+    <section class="totals" aria-label="Today">
+      <div><b class="mono" id="t-today">0</b><span>tokens today</span></div>
+      <div><b class="mono" id="t-agents">0</b><span>running</span></div>
+      <div><b class="mono" id="t-working">0</b><span>working</span></div>
+      <button id="t-waiting-wrap" title="Show all agents"><b class="mono" id="t-waiting">0</b><span>need you</span></button>
+    </section>
+    <span class="updated pywebview-drag-region" id="updated"></span>
+  </div>
+
+  <div class="banner" id="banner" role="alert" hidden><span class="icon" data-icon="warning-circle"></span><span id="banner-text"></span></div>
+
+  <main id="main">
+    <section class="page" id="page-usage" role="tabpanel" aria-labelledby="tab-usage">
+      <div class="cards" id="cards"></div>
+    </section>
+    <section class="page" id="page-agents" role="tabpanel" aria-labelledby="tab-agents" hidden>
+      <div class="types" id="types" role="toolbar" aria-label="Agent types"></div>
+      <div class="detail" id="detail" hidden></div>
+    </section>
+  </main>
+
+  <div class="tip" id="tip" role="tooltip"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"><span class="icon" id="toast-icon"></span><span id="toast-text"></span></div>
+
+  <script src="vendor/icons.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
