@@ -6,7 +6,7 @@ A compact, landscape, always-on-top Windows panel for all your coding agents.
 - **Agents page**: a tile for **All agents** and one for each agent type. Click a tile to show its agents below in a five-row scrolling list; the window grows if it needs the room. Each agent shows its status and where it runs: Claude Code CLI in Windows Terminal, the Claude desktop app, Codex CLI, Codex in a VS Code terminal, and so on.
 - **Usage page**: a monitor (card) per agent type, with a bar for each limit window: the 5-hour window, the last 7 days and, for Claude, Fable's own weekly window. Each bar shows tokens used as a % of the quota. The small **+** adds a monitor for any agent type, and **× Remove** hides one.
 - **Overview page**: each model's share of your tokens over 7 or 30 days, and a calendar of tokens per day, a month at a time with arrows to go back, where each day's circle shows how much you used and how it split between agents.
-- **Columns**: small buttons in the toolbar lay out every page in 3, 2 or 1 columns. It is one setting for all pages.
+- **Columns**: small buttons in the toolbar lay out every page in 1, 2 or 3 columns. It is one setting for all pages.
 - **Pin and highlight**: right-click an agent to pin it, so it stays listed under the tiles, or to mark it with a colour.
 - **Your order**: drag the agent tiles, and the sessions in a list, to put them in the order you want.
 - **Click an agent** to open it exactly where it runs:
@@ -39,7 +39,7 @@ In the title bar:
 - minimise, maximise and close. Maximise fills the screen the window is on, above the taskbar, and the cards spread into one row. Click it again, or double-click the title bar, to go back.
 
 Under the title bar, on the right:
-- three small buttons set the columns: 3, 2 or 1. The choice applies to every page, and on the Agents page to both the tiles and the agent list;
+- three small buttons set the columns: 1, 2 or 3. The choice applies to every page, and on the Agents page to both the tiles and the agent list;
 - on the Usage page, a small **+** adds a monitor (see below).
 
 The dot next to the name is green while the data is live, and grey if refreshing has stopped. Hover over it to see when the data last updated.
@@ -82,7 +82,12 @@ Each bar shows the tokens used in one window, and how full that window is:
 - **`5h`**: the current 5-hour window.
 - **`7d`**: the last 7 days.
 - **`Fable`** (Claude only): tokens used with Claude Fable models in the last 7 days. Claude plans meter Fable on a weekly limit of its own.
-- **Next line**: when the windows reset (`resets 5h 2h 14m · 7d 3d 3h · Fable 4d 1h`), or, without official limits, when the current 5-hour block ends.
+- **Other windows the CLI reports**, such as **`30d`** for Codex on the free plan: each gets its own bar with the official %, and tokens are counted over that window.
+- **Next line**: when the windows reset (`5h resets in 2h 14m · 7d in 3d 3h · Fable in 4d 1h`), or, without official limits, when the current 5-hour block ends.
+- **Read quota**: on a Claude Code or Codex card with no official % at all, a small button sits at the right of that line.
+  - It re-reads the logs and the status line at once.
+  - If there's still no official %, it opens the agent's CLI (`claude` or `codex`) in Windows Terminal, in your home folder. Send one message there: Claude Code then passes its 5h and 7d % to the status line, Codex writes its limits to its session log, and the bars fill in at the next refresh.
+  - AgentBoard only opens the CLI; it sends nothing for you.
 - **Bottom line**: today's tokens, cache reads, and, where relevant, requests or loaded local models.
 
 Where the percentage comes from depends on what is available:
@@ -151,7 +156,7 @@ The agent colours were checked with a colour-vision validator in light and dark 
 
 The page starts with tiles only: one for **All agents** and one for each agent type. Each tile shows its agent count, and how many need approval (red), are waiting for you (amber) and are working (green).
 
-Click a tile to list its agents below the tiles, and the window grows to fit the list. The list is always five rows tall, with 3, 2 or 1 agents per row depending on the column setting; any more scroll inside it. Click the tile again to hide the list, and the window shrinks back. Only one tile is open at a time. Each agent shows:
+Click a tile to list its agents below the tiles, and the window grows to fit the list. The list is always five rows tall, with 1, 2 or 3 agents per row depending on the column setting; any more scroll inside it. Click the tile again to hide the list, and the window shrinks back. Only one tile is open at a time. Each agent shows:
 - the session title;
 - a status dot:
   - red: it stopped on a tool call, probably waiting for approval;
@@ -288,9 +293,9 @@ The window's page is served from a local web server that only this PC can reach.
 ## Known limits
 
 - **The official Fable percentage isn't available yet.** Claude Code shows it only on its `/usage` screen, so the Fable bar uses your own limit or shows `no quota` (see the Usage page section).
-- **Official Claude limits need a CLI session.** Claude doesn't store the 5h and 7d percentages on disk for desktop app sessions, so without a Claude Code CLI session with the status line, the bars use what Auto has learned, your own limits, or show `no quota`.
+- **Official Claude limits need a CLI session.** Claude doesn't store the 5h and 7d percentages on disk for desktop app sessions, so without a Claude Code CLI session with the status line, the bars use what Auto has learned, your own limits, or show `no quota`. **Read quota** on the card opens such a session for you.
 - **The Claude session link** is the app's own, but it isn't documented, so a future app version could change it. If it stops working, the click still brings the app to the front.
-- **Codex inside the ChatGPT app** runs as one background process for all its threads, so it appears as one agent, and a click only brings the app to the front. History that Codex imported from other agents is not counted as Codex usage. On the test PC, Codex logged no rate limits, so its bars show `no quota` unless you pick a plan.
+- **Codex inside the ChatGPT app** runs as one background process for all its threads, so it appears as one agent, and a click only brings the app to the front. History that Codex imported from other agents is not counted as Codex usage. On the free plan, Codex reports a 30-day window instead of 5h and 7d ones, so the card shows a **30d** bar with the official %, while 5h and 7d show `no quota` unless you pick a plan.
 - **Not tested live**: Gemini CLI, Grok, Qwen Code and opencode weren't installed on the test PC. Their log readers are tested with sample logs in each tool's format (`tests/test_readers.py`).
 - **Exact tab jump** was tested with stand-in agents, not with live Claude Code or Codex CLI tabs. It relies on the same console-title mechanism those CLIs use.
 - **Ollama** doesn't log tokens per request. Local tokens appear only when the agent using Ollama logs them, as opencode does.

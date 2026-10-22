@@ -2,6 +2,8 @@
 import ctypes
 import ctypes.wintypes as W
 import os
+import shutil
+import subprocess
 import winreg
 
 import webview
@@ -82,6 +84,36 @@ class Api:
 
     def state(self):
         return {"pinned": self._pinned, "maximized": self._restore is not None}
+
+    def read_quota(self, type_id):
+        """Re-read an agent type's quota now. If it still has no official %, open its CLI in Windows Terminal: one
+        message there records it (Claude Code passes it to the status line, Codex writes it to its session log).
+        Nothing is sent for you; AgentBoard only opens the CLI."""
+        t = next((a for a in self._cfg["agents"] if a["id"] == type_id), None)
+        if not t or not t.get("cli"):
+            return {"ok": False, "found": False, "message": "This agent type reports no quota of its own."}
+        if getattr(self._engine, "demo", False):
+            return {"ok": True, "found": False, "message": f"Demo: this would re-read, then open {t['cli']}"}
+        try:
+            wins = self._engine.read_quota(type_id)
+            self._snap = self._engine.snapshot()
+        except Exception as e:  # report instead of breaking the page
+            return {"ok": False, "found": False, "message": f"Could not re-read: {e!r}"}
+        if wins:
+            return {"ok": True, "found": True,
+                    "message": "Quota read: " + " · ".join(f"{w['label']} {w['pct']:.0f}%" for w in wins)}
+        exe = shutil.which(t["cli"])
+        if not exe:
+            return {"ok": False, "found": False, "message": f"No quota yet, and {t['cli']} isn't on PATH"}
+        home, wt = os.path.expanduser("~"), shutil.which("wt")
+        try:
+            if wt:
+                subprocess.Popen([wt, "-d", home, exe])
+            else:
+                subprocess.Popen([exe], cwd=home, creationflags=subprocess.CREATE_NEW_CONSOLE)
+        except OSError as e:
+            return {"ok": False, "found": False, "message": f"Could not open {t['cli']}: {e}"}
+        return {"ok": True, "found": False, "message": f"Opened {t['cli']}: send one message to record the quota"}
 
     def jump(self, key):
         if getattr(self._engine, "demo", False):

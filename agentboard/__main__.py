@@ -22,7 +22,8 @@ def once():
         wins = []
         for w in t["windows"]:
             pct = f" {w['pct']:.0f}% ({w['basis']})" if w["pct"] is not None else ""
-            end = f", resets {dt.datetime.fromtimestamp(w['end']):%H:%M}" if w["end"] else ""
+            when = dt.datetime.fromtimestamp(w["end"]) if w["end"] else None
+            end = f", resets {when:%H:%M}" if when and when.date() == dt.date.today() else f", resets {when:%b %d %H:%M}" if when else ""
             wins.append(f"{w['key']} {fmt(w['tokens'])}{pct}{end}")
         print(f"  {t['name']:22} running={t['running']} today={fmt(t['today'])} | {' | '.join(wins)}")
     print("\n== Agents")

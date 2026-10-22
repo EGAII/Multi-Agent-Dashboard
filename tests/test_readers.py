@@ -8,7 +8,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agentboard.core import config as cfgmod  # noqa: E402
-from agentboard.core.usage import DayStore, UsageModel  # noqa: E402
+from agentboard.core.usage import DayStore, FileState, UsageModel  # noqa: E402
 
 NOW = time.time()
 ISO = lambda t: dt.datetime.fromtimestamp(t, dt.timezone.utc).isoformat().replace("+00:00", "Z")  # noqa: E731
@@ -86,6 +86,10 @@ def main():
     merged = DayStore(days_file).merge({"2026-10-20": {"claude": 300, "codex": 7}}, "2026-10-22")
     with open(days_file, encoding="utf-8") as f:
         saved = json.load(f)["days"]
+    # a reported window of another length (Codex's free plan has one of 30 days) gets its own bar
+    free = FileState("free.jsonl", "codex", rate_ts=NOW,
+                     rate_limits={"primary": {"used_percent": 3.0, "window_minutes": 43200, "resets_at": NOW + 20 * 86400}})
+    free_wins = m._windows(next(a for a in cfg["agents"] if a["id"] == "codex"), [free], [], [], NOW)
 
     checks = [
         ("gemini fresh tokens", s["gemini"]["today"], 1350),
@@ -109,6 +113,8 @@ def main():
         ("overview: claude tokens today", m.overview["days"].get(dt.date.today().isoformat(), {}).get("claude"), 1360),
         ("day store: a stored day only grows", merged["2026-10-20"], {"claude": 500, "codex": 7}),
         ("day store: today is not saved yet", sorted(saved), ["2026-10-20"]),
+        ("codex 30-day window (free plan)", [(w["label"], w["basis"], w["pct"], w.get("name")) for w in free_wins],
+         [("5h", None, None, None), ("7d", None, None, None), ("30d", "official", 3.0, "30-day")]),
     ]
     bad = 0
     for name, got, want in checks:

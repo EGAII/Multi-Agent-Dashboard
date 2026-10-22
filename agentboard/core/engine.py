@@ -20,17 +20,24 @@ class Engine:
         self.error = None
         self._last_usage = 0.0
         self._stop = threading.Event()
+        self._lock = threading.Lock()  # the refresh loop and a "Read quota" click both tick
 
     def tick(self, force_usage=False):
-        agents = self.scanner.scan()
-        if force_usage or time.time() - self._last_usage >= self.cfg.get("usage_refresh_seconds", 15):
-            self.usage.refresh()
-            self._last_usage = time.time()
-        self.usage.attach_sessions(agents)
-        self._link_claude_app(agents)
-        self.summary = self.usage.summarize(agents)
-        self.agents = agents
-        return agents, self.summary
+        with self._lock:
+            agents = self.scanner.scan()
+            if force_usage or time.time() - self._last_usage >= self.cfg.get("usage_refresh_seconds", 15):
+                self.usage.refresh()
+                self._last_usage = time.time()
+            self.usage.attach_sessions(agents)
+            self._link_claude_app(agents)
+            self.summary = self.usage.summarize(agents)
+            self.agents = agents
+            return agents, self.summary
+
+    def read_quota(self, type_id):
+        """Re-read the logs and the status line now; -> that agent type's windows with an official %."""
+        self.tick(force_usage=True)
+        return [w for w in (self.summary.get(type_id) or {}).get("windows", []) if w.get("basis") == "official"]
 
     def run(self, on_update):
         def loop():
@@ -71,6 +78,7 @@ class Engine:
         # every configured agent type goes to the page, so a monitor can be added for one that is not in use yet;
         # "visible" marks the ones shown by default (running now or used recently)
         types = list(self.summary.values())
+        conf = {a["id"]: a for a in self.cfg["agents"]}
         total_today = sum(s["today"] for s in types) or 0
         out_types = []
         for s in sorted(types, key=lambda s: (not s.get("visible"), -s["running"], -s["today"])):
@@ -80,7 +88,10 @@ class Engine:
                                                  "today_cache", "requests_today", "week", "models", "windows")}
                              | {"loaded": s.get("loaded"), "quota_kind": q["kind"], "requests": requests,
                                 "visible": bool(s.get("visible")), "daily": s.get("daily"),
-                                "plans": plans.for_type(s["id"])})
+                                "plans": plans.for_type(s["id"]),
+                                # its CLI reports the official quota, so "Read quota" can fetch it
+                                "read_quota": bool(conf.get(s["id"], {}).get("cli"))
+                                              and conf.get(s["id"], {}).get("quota", {}).get("kind") == "from_log"})
         agents = []
         for a in sorted(self.agents, key=lambda a: (STATUS_ORDER.get(a.status, 9), a.type_name, a.name)):
             kind, label = a.surface

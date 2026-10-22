@@ -142,7 +142,7 @@ button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 #t-waiting-wrap.attn b { color: var(--warn); }
 #t-waiting-wrap:hover span { color: var(--ink); }
 
-/* column switch (3, 2 or 1 columns, per page) and the small add-monitor button */
+/* column switch (1, 2 or 3 columns, one for every page) and the small add-monitor button */
 .layout { display: inline-grid; grid-auto-flow: column; gap: 2px; padding: 2px; margin-left: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; }
 .lbtn { width: 26px; height: 24px; border-radius: 999px; display: grid; place-items: center; color: var(--ink-3); transition: background-color 140ms, color 140ms; }
 .lbtn .icon { width: 14px; height: 14px; }
@@ -231,6 +231,17 @@ body.still .page[data-pos], body.still .segmented * { transition: none !importan
 #page-usage[data-cols="3"] .bar { grid-column: 1 / -1; }
 .note { color: var(--ink-3); font-size: 11px; }
 .note:empty { display: none; }
+/* the reset note, with "Read quota" at its right when the card has no official % */
+.note-row { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 8px; min-width: 0; }  /* a narrow card puts the button under the note */
+.note-row .note { flex: 1 1 auto; min-width: 0; }
+.note-row:has(> .note:empty):has(> .readq[hidden]) { display: none; }
+.readq {
+  margin-left: auto; flex: none; height: 20px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--line);
+  color: var(--ink-2); font-size: 11px; white-space: nowrap; transition: border-color 120ms, color 120ms;
+}
+.readq:hover:not(:disabled) { border-color: var(--ink); color: var(--ink); }
+.readq:disabled { cursor: default; color: var(--ink-3); }
+.readq[hidden] { display: none; }
 .foot { margin-top: auto; padding-top: 7px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 6px; min-width: 0; }
 .meta { flex: 1; min-width: 0; color: var(--ink-3); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .meta b { color: var(--ink-2); font-weight: 500; }

@@ -2,7 +2,7 @@
 // AgentBoard page. Pulls a JSON snapshot from Python (window.pywebview.api) and patches the DOM in place,
 // keyed by agent type and agent process, so bars animate between values instead of redrawing.
 // The pages share one cell, so the window is as tall as the tallest page and keeps its size and place when you
-// switch pages; opening an agent type's details can still make it taller. One column count (3, 2 or 1), set with
+// switch pages; opening an agent type's details can still make it taller. One column count (1, 2 or 3), set with
 // the small buttons in the toolbar, applies to every page; one column also narrows the window and tightens the spacing.
 (() => {
   const $ = (id) => document.getElementById(id);
@@ -96,16 +96,33 @@
     el.innerHTML = `
       <div class="head"><i class="tdot"></i><h3></h3><span class="run"></span></div>
       <div class="bars"></div>
-      <div class="note"></div>
+      <div class="note-row"><div class="note"></div><button class="readq" hidden>Read quota</button></div>
       <div class="foot"><div class="meta"></div>
         <button class="plan-chip" aria-haspopup="dialog" aria-expanded="false"><span class="plan-name">Auto</span><span class="icon" data-icon="caret-right"></span></button>
         <button class="remove"><span class="icon" data-icon="x"></span>Remove</button></div>`;
     el.querySelector(".remove").addEventListener("click", () => removeMonitor(id));
+    el.querySelector(".readq").addEventListener("click", (e) => readQuota(id, e.currentTarget));
     el.querySelector(".plan-chip").addEventListener("click", (e) => {
       if (S.planFor === id) closePlan(); else openPlan(id, e.currentTarget);
     });
     paintIcons(el);
     return el;
+  }
+
+  // "Read quota": re-read the logs and the status line now; with still no official %, Python opens the agent's CLI
+  // in Windows Terminal, where one message records it. The bars then fill in on the next refresh.
+  async function readQuota(id, btn) {
+    if (!S.api || btn.disabled) return;
+    btn.disabled = true; btn.textContent = "Reading…";
+    try {
+      const r = await S.api.read_quota(id);
+      toast(r.message, r.ok);
+      const snap = await S.api.snapshot();  // what the re-read found, without waiting for the next refresh
+      if (snap && snap.ready) { S.lastTs = snap.ts; render(snap); }
+    } catch (e) {
+      toast(`Could not read the quota: ${e}`, false);
+    }
+    btn.disabled = false; btn.textContent = "Read quota";
   }
 
   // ------------------------------------------------------------------ plans: an estimated % where the agent reports none
@@ -171,7 +188,7 @@
     const p = 100 * count / lim.value;
     return { ...w, basis: "est", count, lim, pct: p, lvl: level(p) };
   }
-  function windowsOf(t) {  // what the card shows: 5h, 7d, model windows, and Today when the plan has a daily limit
+  function windowsOf(t) {  // what the card shows: 5h, 7d, other reported windows (e.g. 30d), model windows, and Today when the plan has a daily limit
     const out = (t.windows || []).map((w) => estimate(t, w));
     if (t.daily && limitFor(t, "1d")) out.push(estimate(t, { key: "1d", label: "Today", basis: null, pct: null, ...t.daily }));
     return out;
@@ -307,7 +324,7 @@
 
   // What one window line says, and its longer hover text.
   function describeWin(w, local) {
-    const name = WIN_NAME[w.key] || `${w.label || w.key} weekly`, tok = `${fmt(w.tokens)} tokens`;
+    const name = WIN_NAME[w.key] || w.name || `${w.label || w.key} weekly`, tok = `${fmt(w.tokens)} tokens`;
     const ends = w.end ? `, resets in ${until(w.end)}` : "";
     if (w.basis === "nolimit") return { text: "no limit", cls: "muted", tip: `${name}: ${tok}; ${w.lim.plan} has no ${name} limit` };
     if (w.basis === "est") {
@@ -340,8 +357,10 @@
     const box = el.querySelector(".bars");
     while (box.children.length < wins.length) box.appendChild(makeBar());
     while (box.children.length > wins.length) box.lastChild.remove();
+    let noQuota = false;
     wins.forEach((w, i) => {
       const row = box.children[i], d = describeWin(w, t.quota_kind === "unlimited");
+      noQuota = noQuota || d.text === "no quota";
       row.querySelector(".k").textContent = w.label || w.key;
       row.querySelector(".tok").textContent = fmt(w.tokens);
       const p = row.querySelector(".pct");
@@ -353,10 +372,13 @@
     });
     // when the windows reset: the official reset times, or when the current 5-hour block ends
     const w5 = wins.find((w) => w.key === "5h") || {}, day = wins.find((w) => w.key === "1d");
-    const resets = wins.filter((w) => w.end && w.basis === "official").map((w) => `${w.label || w.key} ${until(w.end)}`);
-    if (day && day.end) resets.push(`today ${until(day.end)}`);
-    el.querySelector(".note").textContent = resets.length ? "resets " + resets.join(" · ")
+    // "5h resets in 2h 14m · 7d in 3d 3h"
+    const resets = wins.filter((w) => w.end && w.basis === "official").map((w) => [w.label || w.key, until(w.end)]);
+    if (day && day.end) resets.push(["today", until(day.end)]);
+    el.querySelector(".note").textContent = resets.length ? resets.map(([k, t], i) => `${k} ${i ? "" : "resets "}in ${t}`).join(" · ")
       : w5.end ? `5h block ends in ${until(w5.end)}` : "";
+    // no official % anywhere on the card, from an agent whose CLI reports one: offer to read it
+    el.querySelector(".readq").hidden = !(t.read_quota && noQuota && !wins.some((w) => w.basis === "official"));
     const meta = [`today <b class="mono">${fmt(t.today)}</b>`];
     if (t.today_cache) meta.push(`cache <b class="mono">${fmt(t.today_cache)}</b>`);
     if (t.requests) meta.push(`req <b class="mono">${t.requests.used}${t.requests.limit ? "/" + t.requests.limit : ""}</b>`);

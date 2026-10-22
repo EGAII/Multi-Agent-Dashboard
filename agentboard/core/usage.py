@@ -593,10 +593,11 @@ class UsageModel:
         return []
 
     def _windows(self, a, files, ev, prompts, now):
-        """Tokens used in the 5-hour and 7-day windows, plus any per-model weekly windows the agent type defines
+        """Tokens used in the 5-hour and 7-day windows, then any window of another length the provider reports
+        (Codex's free plan has one of 30 days), then any per-model weekly windows the agent type defines
         ("model_windows", e.g. Fable for Claude). Each gets a percentage: the provider's own figure when one is
-        reported, else against your own limit from the settings, else against your busiest such window."""
-        official, scoped = {}, []
+        reported, else against your own limit from the settings; otherwise none."""
+        official, scoped, other = {}, [], {}
         for w in self._official(a, files):
             if w.get("reset") and w["reset"] < now:  # a passed reset is stale
                 continue
@@ -604,6 +605,8 @@ class UsageModel:
                 scoped.append(w)
             elif w["label"] in ("5h", "7d"):
                 official.setdefault(w["label"], w)
+            elif w.get("window_minutes"):  # its length tells where it starts, so its tokens can be counted
+                other.setdefault(w["label"], w)
         q = a.get("quota") or {}
         fb = q.get("fallback") or q
         out = []
@@ -618,6 +621,12 @@ class UsageModel:
                 start, end = now - 7 * 86400, None
             limit = fb.get("limit_tokens" if key == "5h" else "limit_tokens_7d")
             out.append(_with_basis({"key": key, "label": key, "end": end, **_counts(ev, prompts, start)}, o, limit))
+        for label, o in sorted(other.items(), key=lambda kv: float(kv[1]["window_minutes"])):
+            mins = float(o["window_minutes"])
+            start = (o["reset"] if o.get("reset") else now) - mins * 60
+            name = f"{round(mins / 60)}-hour" if mins < 1440 else f"{round(mins / 1440)}-day"
+            out.append(_with_basis({"key": label, "label": label, "name": name, "end": o.get("reset"),
+                                    **_counts(ev, prompts, start)}, o, None))
         for mw in a.get("model_windows", []):
             pat = mw["match"].lower()
             mev = [e for e in ev if pat in (e.model or "").lower()]
