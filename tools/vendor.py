@@ -13,7 +13,8 @@ GEIST = "geist@1.8.1"
 PHOSPHOR = "@phosphor-icons/core@2.1.1"
 ICONS = ["push-pin", "push-pin-slash", "gear-six", "minus", "x", "terminal-window", "app-window", "code",
          "arrow-up-right", "chart-donut", "stack", "warning-circle", "hand", "cpu", "sun", "moon", "caret-right",
-         "corners-out", "corners-in", "kanban", "columns", "rows", "plus"]
+         "corners-out", "corners-in", "kanban", "columns", "rows", "plus",
+         "chart-bar-horizontal"]
 
 
 def fetch(url):

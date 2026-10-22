@@ -23,8 +23,9 @@
 
   <div class="toolbar pywebview-drag-region" id="toolbar">
     <div class="segmented" role="tablist" aria-label="Pages">
-      <button role="tab" id="tab-usage" aria-controls="page-usage" aria-selected="true" data-page="usage"><span class="icon" data-icon="chart-donut"></span>Usage</button>
-      <button role="tab" id="tab-agents" aria-controls="page-agents" aria-selected="false" data-page="agents"><span class="icon" data-icon="stack"></span>Agents<span class="count mono" id="agent-count">0</span></button>
+      <button role="tab" id="tab-usage" aria-controls="page-usage" aria-selected="true" data-page="usage" title="Usage"><span class="icon" data-icon="chart-bar-horizontal"></span><span class="tab-label">Usage</span></button>
+      <button role="tab" id="tab-agents" aria-controls="page-agents" aria-selected="false" data-page="agents" title="Agents"><span class="icon" data-icon="stack"></span><span class="tab-label">Agents</span><span class="count mono" id="agent-count">0</span></button>
+      <button role="tab" id="tab-overview" aria-controls="page-overview" aria-selected="false" data-page="overview" title="Overview"><span class="icon" data-icon="chart-donut"></span><span class="tab-label">Overview</span></button>
     </div>
     <section class="totals" aria-label="Today">
       <div><b class="mono" id="t-today">0</b><span>tokens today</span></div>
@@ -45,6 +46,27 @@
   <main id="main">
     <section class="page" id="page-usage" role="tabpanel" aria-labelledby="tab-usage">
       <div class="cards" id="cards"></div>
+    </section>
+    <section class="page" id="page-overview" role="tabpanel" aria-labelledby="tab-overview" hidden>
+      <div class="ov">
+        <article class="card ov-card">
+          <div class="head"><h3>Models</h3>
+            <div class="mini-seg" id="ov-span" role="tablist" aria-label="Period">
+              <button role="tab" data-span="7d" aria-selected="true">7 days</button><button role="tab" data-span="30d" aria-selected="false">30 days</button>
+            </div>
+          </div>
+          <div class="ov-models">
+            <div class="ov-donut"><svg id="ov-donut" viewBox="0 0 120 120" role="img" aria-labelledby="ov-total"></svg>
+              <div class="ov-center"><b class="mono" id="ov-total">0</b><span id="ov-span-label">7 days</span></div></div>
+            <ul class="ov-legend" id="ov-legend"></ul>
+          </div>
+        </article>
+        <article class="card ov-card">
+          <div class="head"><h3>Tokens per day</h3><span class="run" id="ov-days-total"></span></div>
+          <div class="ov-grid"><svg id="ov-grid" role="img" aria-label="Tokens per day for the last 13 weeks"></svg></div>
+          <div class="ov-keys" id="ov-keys"></div>
+        </article>
+      </div>
     </section>
     <section class="page" id="page-agents" role="tabpanel" aria-labelledby="tab-agents" hidden>
       <div class="types" id="types" role="toolbar" aria-label="Agent types"></div>

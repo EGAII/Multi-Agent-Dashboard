@@ -13,7 +13,10 @@
   };
   // open: which agent type's details are shown ("all", a type id, or null). Closed on every start.
   const S = { api: null, snap: null, lastTs: 0, page: store.get("ab.page", "usage"), open: null, maximized: false, layout: "", addOpen: false,
-              cols: { usage: Number(store.get("ab.cols.usage", 2)) || 2, agents: Number(store.get("ab.cols.agents", 2)) || 2 } };
+              cols: { usage: Number(store.get("ab.cols.usage", 2)) || 2, agents: Number(store.get("ab.cols.agents", 2)) || 2,
+                      overview: Number(store.get("ab.cols.overview", 2)) || 2 },
+              ovSpan: store.get("ab.ovSpan", "7d") === "30d" ? "30d" : "7d", ovKey: "" };
+  const PAGES = ["usage", "agents", "overview"];
 
   // ------------------------------------------------------------------ formatting
   const fmt = (n) => {
@@ -321,14 +324,9 @@
       return { text: `${pct(w.pct)} of ${fmt(w.ref)}`, cls: level(w.pct),
                tip: `${name}: ${tok} of your ${fmt(w.ref)} limit (${pct(w.pct)})${ends}` };
     }
-    if (w.basis === "peak") {
-      const busiest = w.pct >= 99.5;
-      return { text: busiest ? "busiest" : `${pct(w.pct)} of peak`, cls: "",
-               tip: busiest ? `${name}: ${tok}, your busiest ${name} window in 4 weeks${ends}`
-                            : `${name}: ${tok}, ${pct(w.pct)} of your busiest (${fmt(w.ref)})${ends}` };
-    }
     if (!w.tokens) return { text: "not used", cls: "muted", tip: `${name}: no tokens in this window` };
-    return { text: local ? "no limit" : "", cls: "", tip: `${name}: ${tok}` };
+    // no quota known yet (no official %, plan, custom or learned limit): tokens only, no %
+    return { text: local ? "no limit" : "no quota", cls: "muted", tip: `${name}: ${tok}${local ? ", local model" : ", no quota known"}` };
   }
 
   function updateCard(el, t) {
@@ -347,7 +345,7 @@
       const p = row.querySelector(".pct");
       p.textContent = d.text; p.className = `pct ${d.cls}`;
       const bar = row.querySelector(".bar");
-      bar.className = `bar ${w.basis === "peak" ? "peak" : w.basis === "est" ? `est ${d.cls}` : d.cls === "muted" ? "" : d.cls}`;
+      bar.className = `bar ${w.basis === "est" ? `est ${d.cls}` : d.cls === "muted" ? "" : d.cls}`;
       bar.firstChild.style.width = `${clamp(w.pct)}%`;
       row.title = d.tip;
     });
@@ -722,6 +720,151 @@
     }
   }
 
+  // ------------------------------------------------------------------ overview page: model shares, and tokens per day
+  const SVGNS = "http://www.w3.org/2000/svg";
+  function svg(tag, attrs, title) {
+    const el = document.createElementNS(SVGNS, tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    if (title) { const t = document.createElementNS(SVGNS, "title"); t.textContent = title; el.appendChild(t); }
+    return el;
+  }
+  const share = (n, total) => (total ? `${Math.round((100 * n) / total)}%` : "0%");
+  function modelName(m, typeName) {  // claude-opus-5-5 -> Opus 5.5, gpt-5.5-codex -> GPT-5.5 Codex, gemini-3-pro -> Gemini 3 Pro
+    if (m === "unknown model") return `${typeName} (model unknown)`;
+    const gpt = m.startsWith("gpt-");
+    let s = m.replace(/^claude-/, "").replace(/^gpt-/, "").replace(/-(\d+)-(\d+)(?=$|-)/, " $1.$2").replace(/-/g, " ");
+    s = s.replace(/(^|\s)([a-z])/g, (x, sp, c) => sp + c.toUpperCase());
+    return gpt ? `GPT-${s}` : s;
+  }
+  const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const fromIso = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+
+  function renderOverview(snap) {
+    const ov = snap.overview || { days: {}, models: {} };
+    const types = snap.types || [], typeOf = (id) => types.find((t) => t.id === id) || { name: id, color: "#888" };
+    const key = [S.ovSpan, JSON.stringify(ov.models && ov.models[S.ovSpan]), Object.keys(ov.days || {}).length, ov.today,
+                 JSON.stringify((ov.days || {})[ov.today])].join("|");
+    $("ov-span").querySelectorAll("button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.span === S.ovSpan)));
+    if (key === S.ovKey) return;
+    S.ovKey = key;
+    drawModels(((ov.models || {})[S.ovSpan]) || [], typeOf);
+    drawDays(ov, types, typeOf);
+  }
+
+  // the donut: each model's share of the period's tokens; a model takes its agent's colour, a second or third model
+  // of the same agent a lighter mix of it, and anything past six slices goes into Other
+  function drawModels(rows, typeOf) {
+    const total = rows.reduce((s, r) => s + r.tokens, 0), label = S.ovSpan === "30d" ? "30 days" : "7 days";
+    const seenPerType = {}, slices = rows.slice(0, 6).map((r) => {
+      const t = typeOf(r.type_id), k = (seenPerType[r.type_id] = (seenPerType[r.type_id] || 0) + 1) - 1;
+      // tints toward white stay visible on both the light and the dark background
+      const color = k === 0 ? t.color : `color-mix(in srgb, ${t.color} ${[100, 62, 38][Math.min(k, 2)]}%, #ffffff)`;
+      return { name: modelName(r.model, t.name), agent: t.name, tokens: r.tokens, color };
+    });
+    const rest = rows.slice(6).reduce((s, r) => s + r.tokens, 0);
+    if (rest) slices.push({ name: "Other models", agent: "", tokens: rest, color: "var(--idle)" });
+    $("ov-total").textContent = fmt(total);
+    $("ov-span-label").textContent = label;
+    const g = $("ov-donut");
+    g.innerHTML = "";
+    const R = 46, C = 2 * Math.PI * R, gap = slices.length > 1 ? 2 : 0;
+    g.appendChild(svg("circle", { cx: 60, cy: 60, r: R, fill: "none", "stroke-width": 16, style: "stroke: var(--track)" }));
+    let at = 0;
+    const ring = svg("g", { transform: "rotate(-90 60 60)" });
+    for (const s of slices) {
+      const len = (C * s.tokens) / total, draw = Math.max(0.5, len - gap);
+      ring.appendChild(svg("circle", { cx: 60, cy: 60, r: R, fill: "none", "stroke-width": 16, "stroke-dasharray": `${draw} ${C - draw}`,
+        "stroke-dashoffset": -at, style: `stroke: ${s.color}` },
+        `${s.name}${s.agent ? ` (${s.agent})` : ""}: ${fmt(s.tokens)} tokens, ${share(s.tokens, total)} of ${label}`));
+      at += len;
+    }
+    g.appendChild(ring);
+    const list = $("ov-legend");
+    list.innerHTML = "";
+    if (!total) { list.innerHTML = `<li class="none">No tokens in the last ${label}</li>`; return; }
+    for (const s of slices) {
+      const li = document.createElement("li");
+      li.innerHTML = `<i></i><span></span><b class="mono"></b><em class="mono"></em>`;
+      li.querySelector("i").style.background = s.color;
+      li.querySelector("span").textContent = s.name;
+      li.querySelector("b").textContent = share(s.tokens, total);
+      li.querySelector("em").textContent = fmt(s.tokens);
+      li.title = `${s.name}${s.agent ? ` · ${s.agent}` : ""}: ${fmt(s.tokens)} tokens`;
+      list.appendChild(li);
+    }
+  }
+
+  // the grid: one small circle per day for 13 weeks, like a GitHub contribution graph. Its size shows the day's tokens
+  // (relative to the busiest day) and its slices each agent's share of that day.
+  function drawDays(ov, types, typeOf) {
+    const WEEKS = 13, CELL = 17, LEFT = 24, TOP = 14, today = fromIso(ov.today || isoDay(new Date()));
+    const start = new Date(today); start.setDate(today.getDate() - today.getDay() - (WEEKS - 1) * 7);  // a Sunday
+    const order = types.map((t) => t.id), days = ov.days || {};
+    const cells = [];
+    for (let c = 0; c < WEEKS; c++) {
+      for (let r = 0; r < 7; r++) {
+        const d = new Date(start); d.setDate(start.getDate() + c * 7 + r);
+        if (d > today) continue;
+        const by = days[isoDay(d)] || {};
+        cells.push({ c, r, d, by, total: Object.values(by).reduce((s, n) => s + n, 0) });
+      }
+    }
+    const max = Math.max(1, ...cells.map((x) => x.total));
+    const g = $("ov-grid"), W = LEFT + WEEKS * CELL, H = TOP + 7 * CELL;
+    g.setAttribute("viewBox", `0 0 ${W} ${H}`); g.setAttribute("width", W); g.setAttribute("height", H);
+    g.innerHTML = "";
+    const months = [];  // month names above the first week of each month; a partial first month gives way to the next
+    for (let c = 0; c < WEEKS; c++) {
+      const d = new Date(start); d.setDate(start.getDate() + c * 7);
+      if (!months.length || months[months.length - 1].m !== d.getMonth()) months.push({ c, m: d.getMonth(), d });
+    }
+    if (months.length > 1 && months[1].c - months[0].c < 3) months.shift();
+    for (const { c, d } of months) {
+      const text = svg("text", { x: LEFT + c * CELL + 1, y: 9 });
+      text.textContent = d.toLocaleDateString("en-US", { month: "short" });
+      g.appendChild(text);
+    }
+    [["Mon", 1], ["Wed", 3], ["Fri", 5]].forEach(([name, r]) => {
+      const text = svg("text", { x: 0, y: TOP + r * CELL + CELL / 2 + 3 });
+      text.textContent = name;
+      g.appendChild(text);
+    });
+    const present = new Set();
+    for (const x of cells) {
+      const cx = LEFT + x.c * CELL + CELL / 2, cy = TOP + x.r * CELL + CELL / 2;
+      const parts = order.filter((id) => x.by[id]).map((id) => [id, x.by[id]]);
+      parts.forEach(([id]) => present.add(id));
+      const when = x.d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+      const tip = x.total ? `${when}: ${fmt(x.total)} tokens · ${parts.map(([id, n]) => `${typeOf(id).name} ${share(n, x.total)}`).join(", ")}`
+                          : `${when}: no tokens`;
+      const cell = svg("g", {}, tip);
+      cell.appendChild(svg("rect", { x: cx - CELL / 2, y: cy - CELL / 2, width: CELL, height: CELL, fill: "transparent" }));
+      if (!x.total) {
+        cell.appendChild(svg("circle", { cx, cy, r: 1.4, style: "fill: var(--line-strong)" }));
+      } else {
+        const rad = 2.4 + 4.8 * Math.sqrt(x.total / max);
+        if (parts.length === 1) {
+          cell.appendChild(svg("circle", { cx, cy, r: rad, style: `fill: ${typeOf(parts[0][0]).color}` }));
+        } else {
+          let a = -Math.PI / 2;
+          for (const [id, n] of parts) {
+            const b = a + (2 * Math.PI * n) / x.total, large = b - a > Math.PI ? 1 : 0;
+            const p = `M${cx},${cy} L${cx + rad * Math.cos(a)},${cy + rad * Math.sin(a)} A${rad},${rad} 0 ${large} 1 ${cx + rad * Math.cos(b)},${cy + rad * Math.sin(b)} Z`;
+            cell.appendChild(svg("path", { d: p, style: `fill: ${typeOf(id).color}; stroke: var(--surface); stroke-width: 0.6` }));
+            a = b;
+          }
+        }
+      }
+      if (isoDay(x.d) === ov.today) cell.appendChild(svg("circle", { cx, cy, r: 8, fill: "none", style: "stroke: var(--ink); stroke-width: 1" }));
+      g.appendChild(cell);
+    }
+    const total = cells.reduce((s, x) => s + x.total, 0), active = cells.filter((x) => x.total).length;
+    $("ov-days-total").textContent = `${WEEKS} weeks · ${fmt(total)} · ${active} active days`;
+    $("ov-keys").innerHTML = [...present].map((id) => `<span><i style="background:${typeOf(id).color}"></i>${typeOf(id).name}</span>`).join("") +
+      `<span class="scale">fewer<svg width="44" height="12" viewBox="0 0 44 12" aria-hidden="true">` +
+      [3, 4.5, 6].map((r, i) => `<circle cx="${6 + i * 15}" cy="6" r="${r}" style="fill: var(--ink-3)"></circle>`).join("") + `</svg>more</span>`;
+  }
+
   // ------------------------------------------------------------------ window height follows the content
   let fitTimer = 0;
   function fitSoon() {
@@ -757,7 +900,7 @@
   }
   // Refit only when something that changes the height changed, not on every refresh.
   function checkLayout() {
-    const sig = [S.page, S.open, S.cols[S.page], cards.size, S.addOpen, addKey, S.planFor, $("plan-custom").hidden,
+    const sig = [S.page, S.open, S.cols[S.page], cards.size, S.addOpen, addKey, S.planFor, $("plan-custom").hidden, S.ovKey,
                  $("cards").querySelectorAll(".brow").length, tiles.size,
                  $("detail").querySelectorAll(".agent").length, pinRows.size, $("banner").hidden].join("|");
     if (sig !== S.layout) { S.layout = sig; fitSoon(); }
@@ -816,13 +959,15 @@
     renderTotals(snap);
     renderUsage(snap);
     renderAgents(snap);
+    renderOverview(snap);
     tickClock();
     checkLayout();
   }
 
   function showPage(page) {
+    if (!PAGES.includes(page)) page = "usage";
     S.page = page; store.set("ab.page", page);
-    for (const p of ["usage", "agents"]) {
+    for (const p of PAGES) {
       $(`tab-${p}`).setAttribute("aria-selected", String(p === page));
       $(`page-${p}`).hidden = p !== page;
     }
@@ -835,7 +980,7 @@
 
   // ------------------------------------------------------------------ column switch (per page)
   function syncCols() {
-    for (const p of ["usage", "agents"]) {
+    for (const p of PAGES) {
       $(`page-${p}`).style.setProperty("--cols", S.cols[p]);
       $(`page-${p}`).dataset.cols = S.cols[p];
     }
@@ -914,6 +1059,11 @@
     matchMedia("(prefers-color-scheme: dark)").addEventListener("change", syncThemeIcon);
 
     document.querySelectorAll(".segmented button").forEach((b) => b.addEventListener("click", () => showPage(b.dataset.page)));
+    $("ov-span").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+      S.ovSpan = b.dataset.span; store.set("ab.ovSpan", S.ovSpan);
+      if (S.snap) renderOverview(S.snap);
+      checkLayout();
+    }));
     $("t-waiting-wrap").addEventListener("click", () => { showPage("agents"); openFold("all"); });
     $("btn-theme").addEventListener("click", () => setTheme(effectiveTheme() === "dark" ? "light" : "dark"));
     $("btn-pin").addEventListener("click", async () => {
@@ -937,7 +1087,7 @@
     $("btn-close").addEventListener("click", () => S.api && S.api.close());
     $("titlebar").addEventListener("dblclick", (e) => { if (!e.target.closest("button")) toggleMax(); });
     document.addEventListener("keydown", (e) => {
-      if (e.ctrlKey && (e.key === "1" || e.key === "2")) showPage(e.key === "1" ? "usage" : "agents");
+      if (e.ctrlKey && ["1", "2", "3"].includes(e.key)) showPage(PAGES[Number(e.key) - 1]);
       if (e.key === "Escape" && !$("ctx").hidden) closeCtx();
       else if (e.key === "Escape" && S.addOpen) openAdd(false);
       else if (e.key === "Escape" && S.planFor) closePlan();

@@ -2,7 +2,6 @@
 
 Nothing here logs in anywhere or calls a vendor API: every number comes from files on this PC.
 """
-import bisect
 import datetime as dt
 import glob
 import json
@@ -341,20 +340,6 @@ def five_hour_block(events, now, hours=5):
     return 0, None, peak
 
 
-def week_peak(events, now, days):
-    """Largest 7-day token total among windows ending at each of the last `days` midnights, and now."""
-    evs = sorted((e.ts, e.fresh) for e in events)
-    if not evs:
-        return 0
-    ts = [t for t, _ in evs]
-    cum = [0]
-    for _, n in evs:
-        cum.append(cum[-1] + n)
-    midnight = dt.datetime.combine(dt.date.today(), dt.time()).timestamp()
-    ends = [now] + [midnight - k * 86400 for k in range(max(0, days - 6))]
-    return max(cum[bisect.bisect_left(ts, end)] - cum[bisect.bisect_left(ts, end - 7 * 86400)] for end in ends)
-
-
 def _counts(events, prompts, start):
     """What a window holds from `start` on: tokens, API requests (one per reply) and the prompts you typed."""
     ev = [e for e in events if e.ts >= start]
@@ -373,17 +358,15 @@ def pt_midnight(now, days_ahead):
     return dt.datetime.combine(d, dt.time(), tz).timestamp()
 
 
-def _with_basis(w, official, limit, peak):
-    """Fill in a window's percentage and where it comes from: official > your limit > your busiest window."""
+def _with_basis(w, official, limit):
+    """Fill in a window's percentage of its quota and where the quota comes from: the provider's own figure,
+    else your limit from the settings file. With neither, there is no % (the page can still estimate one
+    from a plan, a custom limit or a limit learned from earlier official readings)."""
     w.update(basis=None, pct=None, ref=None)
     if official:
         w.update(basis="official", pct=official["pct"])
     elif limit:
         w.update(basis="limit", pct=100 * w["tokens"] / limit, ref=limit)
-    else:
-        p = peak()
-        if p:
-            w.update(basis="peak", pct=100 * w["tokens"] / p, ref=p)
     return w
 
 
@@ -474,15 +457,19 @@ def ollama_models():
         return None
 
 
+OVERVIEW_DAYS = 91  # 13 weeks: the daily grid on the Overview page
+
+
 class UsageModel:
     def __init__(self, cfg):
         self.cfg = cfg
         self.cache = LogCache()
         self.by_type = {}
         self.summary = {}
+        self.overview = {"days": {}, "models": {"7d": [], "30d": []}}
 
     def refresh(self):
-        days = self.cfg.get("history_days", 29)
+        days = self.cfg.get("history_days", 91)
         for a in self.cfg["agents"]:
             self.by_type[a["id"]] = self.cache.update(a, days)
             if a.get("reader") == "codex":
@@ -493,6 +480,30 @@ class UsageModel:
                         st.title, st.tokens_used, st.model = row[1] or st.title, int(row[2] or 0), row[3] or st.model
                     if st.session in imports:
                         st.imported_before = imports[st.session] + 60
+        self.overview = self._overview(time.time())
+
+    def _overview(self, now):
+        """For the Overview page: tokens by model over 7 and 30 days, and tokens per agent type on each day of the
+        last OVERVIEW_DAYS days (local dates)."""
+        today = dt.date.today()
+        first = today - dt.timedelta(days=OVERVIEW_DAYS - 1)
+        start = dt.datetime.combine(first, dt.time()).timestamp()
+        days, models = {}, {"7d": {}, "30d": {}}
+        for a in self.cfg["agents"]:
+            tid = a["id"]
+            for f in self.by_type.get(tid, []):
+                for e in f.own_events():
+                    if e.ts < start or not e.fresh:
+                        continue
+                    day = days.setdefault(dt.date.fromtimestamp(e.ts).isoformat(), {})
+                    day[tid] = day.get(tid, 0) + e.fresh
+                    model = e.model if e.model and not e.model.startswith("<") else "unknown model"
+                    for key, span in (("7d", 7), ("30d", 30)):
+                        if e.ts >= now - span * 86400:
+                            models[key][(tid, model)] = models[key].get((tid, model), 0) + e.fresh
+        return {"first": first.isoformat(), "today": today.isoformat(), "days": days,
+                "models": {k: sorted(({"type_id": t, "model": m, "tokens": n} for (t, m), n in v.items()),
+                                     key=lambda r: -r["tokens"]) for k, v in models.items()}}
 
     def summarize(self, agents):
         now = time.time()
@@ -551,7 +562,6 @@ class UsageModel:
                 official.setdefault(w["label"], w)
         q = a.get("quota") or {}
         fb = q.get("fallback") or q
-        days = self.cfg.get("history_days", 29)
         out = []
         for key, hours in (("5h", 5), ("7d", 168)):
             o = official.get(key)
@@ -563,8 +573,7 @@ class UsageModel:
             else:
                 start, end = now - 7 * 86400, None
             limit = fb.get("limit_tokens" if key == "5h" else "limit_tokens_7d")
-            peak = lambda k=key: five_hour_block(ev, now)[2] if k == "5h" else week_peak(ev, now, days)  # noqa: E731
-            out.append(_with_basis({"key": key, "label": key, "end": end, **_counts(ev, prompts, start)}, o, limit, peak))
+            out.append(_with_basis({"key": key, "label": key, "end": end, **_counts(ev, prompts, start)}, o, limit))
         for mw in a.get("model_windows", []):
             pat = mw["match"].lower()
             mev = [e for e in ev if pat in (e.model or "").lower()]
@@ -573,7 +582,7 @@ class UsageModel:
             # prompts are not tied to a model, so a model's window counts its tokens and requests only
             w = {"key": mw["key"], "label": mw.get("label", mw["key"]), "end": o.get("reset") if o else None,
                  **_counts(mev, None, start)}
-            out.append(_with_basis(w, o, fb.get(f"limit_tokens_{mw['key']}"), lambda: week_peak(mev, now, days)))
+            out.append(_with_basis(w, o, fb.get(f"limit_tokens_{mw['key']}")))
         return out
 
     def _quota(self, a, files, ev, blk_tokens, blk_end, today):

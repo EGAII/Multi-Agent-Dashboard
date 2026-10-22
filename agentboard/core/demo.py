@@ -1,4 +1,5 @@
 """Made-up agents and usage for `python -m agentboard --demo`: try the UI or take screenshots without real sessions."""
+import datetime as dt
 import threading
 import time
 
@@ -7,18 +8,23 @@ from . import plans, usage
 TYPES = [
     # id, name, colour, local, running, working, waiting, today, cache, requests, quota kind,
     # (5h tokens, 5h %, 5h basis, minutes to reset), (7d tokens, 7d %, 7d basis, minutes to reset)
-    ("claude", "Claude Code", "#d97757", False, 7, 2, 2, 4_820_000, 96_400_000, 0, "official",
+    ("claude", "Claude Code", "#d4704f", False, 7, 2, 2, 4_820_000, 96_400_000, 0, "official",
      (2_140_000, 62, "official", 134), (21_400_000, 38, "official", 3 * 1440 + 200)),
     ("codex", "Codex", "#10a37f", False, 3, 1, 1, 1_930_000, 31_000_000, 0, "official",
      (980_000, 41, "official", 221), (7_240_000, 18, "official", 5 * 1440 + 90)),
     ("gemini", "Gemini CLI", "#4285f4", False, 1, 1, 0, 642_000, 3_100_000, 212, "budget",
-     (410_000, 54, "peak", 160), (2_900_000, 81, "peak", None)),
-    ("ollama", "Ollama", "#64748b", True, 1, 0, 0, 310_000, 0, 0, "unlimited",
-     (120_000, 31, "peak", 95), (1_480_000, 100, "peak", None)),
+     (410_000, None, None, 160), (2_900_000, None, None, None)),
+    ("ollama", "Ollama", "#0891b2", True, 1, 0, 0, 310_000, 0, 0, "unlimited",
+     (120_000, None, None, 95), (1_480_000, None, None, None)),
 ]
+# the Overview page: each agent's usual tokens on a weekday, and its models' shares
+DAILY = {"claude": 4_600_000, "codex": 1_700_000, "gemini": 600_000, "ollama": 250_000}
+MODELS = {"claude": [("claude-opus-5-5", 0.64), ("claude-sonnet-5-5", 0.26), ("claude-fable-5-1", 0.10)],
+          "codex": [("gpt-5.5-codex", 0.85), ("gpt-5.6-luna", 0.15)], "gemini": [("gemini-3-pro", 1.0)],
+          "ollama": [("qwen3:8b", 1.0)]}
 # configured but unused agent types: not shown until you add a monitor for them
-IDLE_TYPES = [("grok", "Grok", "#7a7a7a"), ("qwen", "Qwen Code", "#7c3aed"), ("opencode", "opencode", "#e8a33d"),
-              ("aider", "Aider", "#16a34a")]
+IDLE_TYPES = [("grok", "Grok", "#db2777"), ("qwen", "Qwen Code", "#7c3aed"), ("opencode", "opencode", "#a16207"),
+              ("aider", "Aider", "#65a30d")]
 # per-model weekly windows: key, label, (tokens, %, basis, minutes to reset)
 MODEL_WINDOWS = {"claude": [("fable", "Fable", (3_150_000, 46, "official", 4 * 1440 + 60))]}
 AGENTS = [
@@ -67,8 +73,8 @@ class DemoEngine:
             windows = []
             for key, label, (tokens, pct, basis, mins) in [("5h", "5h", w5), ("7d", "7d", w7)] + MODEL_WINDOWS.get(tid, []):
                 tokens = int(tokens * grow)
-                windows.append({"key": key, "label": label, "tokens": tokens, "pct": min(100, pct * grow),
-                                "basis": basis, "end": now + mins * 60 if mins else None, "ref": int(tokens * 100 / pct),
+                windows.append({"key": key, "label": label, "tokens": tokens, "pct": min(100, pct * grow) if pct else None,
+                                "basis": basis, "end": now + mins * 60 if mins else None, "ref": None,
                                 "requests": tokens // 5200, "prompts": tokens // 40000})
             daily = {"tokens": int(today * grow), "requests": reqs or int(today * grow) // 5200,
                      "prompts": int(today * grow) // 40000, "end": usage.pt_midnight(now, 1)}
@@ -94,4 +100,29 @@ class DemoEngine:
         return {"ts": now, "ready": True, "error": None,
                 "totals": {"today": int(total), "agents": len(agents), "working": sum(a["status"] == "working" for a in agents),
                            "waiting": sum(a["status"] in ("your_turn", "approval") for a in agents)},
-                "types": types, "agents": agents}
+                "types": types, "agents": agents, "overview": self._overview()}
+
+    @staticmethod
+    def _overview():
+        """13 weeks of made-up daily use: busier on weekdays, a few quiet days, Codex and Gemini on some days only."""
+        today = dt.date.today()
+        days, totals = {}, {"7d": {}, "30d": {}}
+        for back in range(usage.OVERVIEW_DAYS):
+            d = today - dt.timedelta(days=back)
+            seed = (d.toordinal() * 2654435761) % 1000 / 1000  # steady pseudo-random per day
+            if d.weekday() >= 5 and seed < 0.6 or seed < 0.06:
+                continue  # weekends are mostly quiet, and the odd weekday off
+            day = {}
+            for i, (tid, base) in enumerate(DAILY.items()):
+                share = ((d.toordinal() * (i + 3) * 40503) % 1000) / 1000
+                if tid != "claude" and share < 0.35:
+                    continue
+                day[tid] = int(base * (0.35 + 1.3 * share) * (0.5 if d.weekday() >= 5 else 1))
+                for span, key in ((7, "7d"), (30, "30d")):
+                    if back < span:
+                        for model, part in MODELS[tid]:
+                            totals[key][(tid, model)] = totals[key].get((tid, model), 0) + int(day[tid] * part)
+            days[d.isoformat()] = day
+        return {"first": (today - dt.timedelta(days=usage.OVERVIEW_DAYS - 1)).isoformat(), "today": today.isoformat(),
+                "days": days, "models": {k: sorted(({"type_id": t, "model": m, "tokens": n} for (t, m), n in v.items()),
+                                                   key=lambda r: -r["tokens"]) for k, v in totals.items()}}

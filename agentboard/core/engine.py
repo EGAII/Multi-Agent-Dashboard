@@ -96,4 +96,4 @@ class Engine:
                 "totals": {"today": total_today, "agents": len(agents),
                            "working": sum(a["status"] == "working" for a in agents),
                            "waiting": sum(a["status"] in ("your_turn", "approval") for a in agents)},
-                "types": out_types, "agents": agents}
+                "types": out_types, "agents": agents, "overview": self.usage.overview}

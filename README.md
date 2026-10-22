@@ -2,7 +2,8 @@
 
 A compact, landscape, always-on-top Windows panel for all your coding agents.
 
-- **Usage page**: a monitor (card) per agent type, with a bar for each limit window: the 5-hour window, the last 7 days and, for Claude, Fable's own weekly window. The small **+** adds a monitor for any agent type, and **× Remove** hides one.
+- **Usage page**: a monitor (card) per agent type, with a bar for each limit window: the 5-hour window, the last 7 days and, for Claude, Fable's own weekly window. Each bar shows tokens used as a % of the quota. The small **+** adds a monitor for any agent type, and **× Remove** hides one.
+- **Overview page**: each model's share of your tokens over 7 or 30 days, and a 13-week grid of days, like a GitHub contribution graph, where each day's circle shows how much you used and how it split between agents.
 - **Columns**: small buttons in the toolbar lay out either page in 3, 2 or 1 columns.
 - **Agents page**: a tile for **All agents** and one for each agent type. Click a tile to show its agents below in a five-row scrolling list; the window grows to fit it. Each agent shows its status and where it runs: Claude Code CLI in Windows Terminal, the Claude desktop app, Codex CLI, Codex in a VS Code terminal, and so on.
 - **Pin and highlight**: right-click an agent to pin it, so it stays listed under the tiles, or to mark it with a colour.
@@ -50,7 +51,7 @@ Switching back to 2 or 3 columns widens the window again.
 
 ![Single-column compact mode](docs/compact-usage.png)
 
-Press **Ctrl+1** for the Usage page and **Ctrl+2** for the Agents page. Drag the bare title bar to move the window.
+The page switch shows the name of the open page; the other pages show just their icon. Press **Ctrl+1** for Usage, **Ctrl+2** for Agents and **Ctrl+3** for Overview. Drag the bare title bar to move the window.
 
 Other ways to run it:
 
@@ -88,8 +89,8 @@ Where the percentage comes from depends on what is available:
 | `42% used` | The CLI reports its own limits: Codex in its logs, and Claude Code once you enable the optional status line (see below). | The official percentage of your 5-hour or weekly limit. Tokens are counted over the same window. It always wins over an estimate. |
 | `42% est.`, or `23 of 15–160` | You picked a plan for the monitor, or Auto has learned your limit (see **Plans** below). | An estimate, drawn with a striped bar so it isn't mistaken for an official figure. |
 | `42% of 3.0M` | You set your own limits in the settings file (`limit_tokens` for 5 hours, `limit_tokens_7d` for 7 days, `limit_tokens_fable` for Fable). | Tokens against your own limit. |
-| `72% of peak`, or `busiest` | None of the above | Tokens compared with your busiest such window in the last 4 weeks. `busiest` means this window is the busiest so far. These bars are drawn lighter, because they are not a limit. |
-| `not used`, `no limit` | No tokens in that window, or your plan has no limit for it | |
+| `no quota` | None of the above | Only the tokens are shown, with an empty bar, until a quota is known. Pick a plan or set a custom limit to get a %. |
+| `not used`, `no limit` | No tokens in that window; or a local model, or a plan with no limit for that window | |
 
 ### Plans: an estimate where the agent reports no %
 
@@ -97,7 +98,7 @@ Most agents don't save their limit usage on your PC, so AgentBoard can't show th
 
 | Choice | How the % is worked out |
 | --- | --- |
-| **Auto** | Each time a window has an official % (Claude's status line, Codex's logs), AgentBoard notes how many tokens 100% came to, and it uses the middle of the recent readings when the official figure is missing. Until it has learned something, the bar compares with your busiest window. |
+| **Auto** | Each time a window has an official % (Claude's status line, Codex's logs), AgentBoard notes how many tokens 100% came to, and it uses the middle of the recent readings when the official figure is missing. Until it has learned something, the window shows `no quota`. |
 | **A vendor plan** | The plan's published limits, counted the same way the vendor counts them: tokens, requests (model replies) or messages (prompts you typed). A daily limit adds a **Today** bar, reset at midnight Pacific as Google does. |
 | **Custom** | Your own limits for 5h, 7d and Today, each in tokens, requests or messages. Type amounts like `3M`, `500k` or `1,500`. |
 
@@ -115,13 +116,31 @@ Vendors change their limits often, so the panel shows when the figures were chec
 
 ![The plan panel with a custom limit](docs/usage-plan.png)
 
-For Fable, Claude Code shows the official weekly percentage on its `/usage` screen, but doesn't pass it to the status line yet. Until it does, the Fable bar compares with your own limit or your busiest Fable week. AgentBoard already reads the field Claude Code uses for per-model windows (`model_scoped`), so the bar switches to the official figure once the status line includes it.
+For Fable, Claude Code shows the official weekly percentage on its `/usage` screen, but doesn't pass it to the status line yet. Until it does, the Fable bar uses your own limit, or shows `no quota`. AgentBoard already reads the field Claude Code uses for per-model windows (`model_scoped`), so the bar switches to the official figure once the status line includes it.
 
 Claude's limits are per account, so one Claude Code CLI session with the status line enabled is enough. Its percentages then cover your desktop app sessions too. The figures are kept for up to 6 hours after the last CLI update.
 
 A bar and its percentage turn amber at 80% and red at 95%, but only for official limits, plan estimates and your own limits. Hover over a bar to see the details.
 
 "Tokens" means new input (including cache writes) plus output. Cache reads, meaning reused context, are shown separately, because they are much larger and cheaper. Anthropic and OpenAI don't publish their limits in tokens, so the token counts are a guide. The official percentage is the real measure.
+
+## Overview page: models and days
+
+The window keeps its width. In 2 or 3 columns the two cards sit side by side, and in 1 column they stack.
+
+- **Models**: a donut of each model's share of your tokens, over the last **7 days** or **30 days** (the small switch). The total is in the middle.
+  - A model takes its agent's colour. A second or third model of the same agent, such as Sonnet next to Opus, gets a lighter tint of it.
+  - Past six models, the rest go into **Other models**.
+  - The legend lists each model's share and tokens. Hover over a slice for its agent.
+- **Tokens per day**: 13 weeks of days, like a GitHub contribution graph, with Sunday at the top and today ringed.
+  - Each day is a small circle. Its size shows the day's tokens compared with your busiest day in the grid, and its slices show each agent's share of that day.
+  - Hover over a day for its date, tokens and split.
+
+Days are your PC's local dates. AgentBoard reads the last 13 weeks of logs for this.
+
+![The Overview page](docs/overview.png)
+
+The agent colours were checked with a colour-vision validator in light and dark mode, so that agents stay apart for most kinds of colour blindness. The legends and tooltips name each agent too.
 
 ## Agents page: where each agent runs
 
@@ -261,10 +280,10 @@ The window's page is served from a local web server that only this PC can reach.
 
 ## Known limits
 
-- **The official Fable percentage isn't available yet.** Claude Code shows it only on its `/usage` screen, so the Fable bar uses your own limit or your busiest Fable week (see the Usage page section).
-- **Official Claude limits need a CLI session.** Claude doesn't store the 5h and 7d percentages on disk for desktop app sessions, so without a Claude Code CLI session with the status line, the bars compare with your own limits or your busiest window.
+- **The official Fable percentage isn't available yet.** Claude Code shows it only on its `/usage` screen, so the Fable bar uses your own limit or shows `no quota` (see the Usage page section).
+- **Official Claude limits need a CLI session.** Claude doesn't store the 5h and 7d percentages on disk for desktop app sessions, so without a Claude Code CLI session with the status line, the bars use what Auto has learned, your own limits, or show `no quota`.
 - **The Claude session link** is the app's own, but it isn't documented, so a future app version could change it. If it stops working, the click still brings the app to the front.
-- **Codex inside the ChatGPT app** runs as one background process for all its threads, so it appears as one agent, and a click only brings the app to the front. History that Codex imported from other agents is not counted as Codex usage. On the test PC, Codex logged no rate limits, so its bars compare with its busiest window.
+- **Codex inside the ChatGPT app** runs as one background process for all its threads, so it appears as one agent, and a click only brings the app to the front. History that Codex imported from other agents is not counted as Codex usage. On the test PC, Codex logged no rate limits, so its bars show `no quota` unless you pick a plan.
 - **Not tested live**: Gemini CLI, Grok, Qwen Code and opencode weren't installed on the test PC. Their log readers are tested with sample logs in each tool's format (`tests/test_readers.py`).
 - **Exact tab jump** was tested with stand-in agents, not with live Claude Code or Codex CLI tabs. It relies on the same console-title mechanism those CLIs use.
 - **Ollama** doesn't log tokens per request. Local tokens appear only when the agent using Ollama logs them, as opencode does.
