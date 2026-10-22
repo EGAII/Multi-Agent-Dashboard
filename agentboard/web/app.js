@@ -93,14 +93,19 @@
       <div class="bars"></div>
       <div class="note"></div>
       <div class="foot"><div class="meta"></div>
-        <button class="remove" title="Stop showing this monitor"><span class="icon" data-icon="x"></span>Remove</button></div>`;
+        <button class="remove"><span class="icon" data-icon="x"></span>Remove</button></div>`;
     el.querySelector(".remove").addEventListener("click", () => removeMonitor(id));
     paintIcons(el);
     return el;
   }
 
-  // the small + in the toolbar opens a strip at the top of the Usage page with the agent types that have no monitor yet
+  // the small + in the toolbar opens a floating panel, anchored under it, with the agent types that have no monitor yet
   let addKey = "";
+  function placeAddPanel() {
+    const pop = $("add-panel"), r = $("btn-add").getBoundingClientRect();
+    pop.style.left = `${Math.max(8, Math.min(r.right - pop.offsetWidth, window.innerWidth - pop.offsetWidth - 8))}px`;
+    pop.style.top = `${r.bottom + 6}px`;
+  }
   function updateAddPanel(types, shown) {
     const addable = types.filter((t) => !shown.includes(t));
     if (!addable.length) S.addOpen = false;
@@ -109,6 +114,7 @@
     btn.title = addable.length ? "Add monitor" : "Every agent type has a monitor";
     btn.setAttribute("aria-expanded", String(S.addOpen));
     $("add-panel").hidden = !S.addOpen;
+    if (S.addOpen) placeAddPanel();
     const key = S.addOpen ? addable.map((t) => `${t.id}:${t.running}:${t.week}`).join("|") : "";
     if (key === addKey) return;
     addKey = key;
@@ -234,22 +240,129 @@
   }
   const isPinned = (a) => MARK.pins.includes(a.sid);
   const pinnedOf = (list) => list.filter(isPinned).sort((x, y) => MARK.pins.indexOf(x.sid) - MARK.pins.indexOf(y.sid));
-  const pinFirst = (list) => [...pinnedOf(list), ...list.filter((a) => !isPinned(a))];
 
   function makeTile(id) {
     const b = document.createElement("button");
     b.className = "type";
+    b.dataset.tile = id;
     b.setAttribute("aria-pressed", "false");
     b.innerHTML = `<span class="icon caret" data-icon="caret-right"></span><span class="tname"><i class="tdot"></i><span></span></span>` +
                   `<b class="total mono"></b><span class="counts"></span>`;
     b.addEventListener("click", () => {
+      if (b._dragged) { b._dragged = false; return; }  // the end of a drag is not a click
       S.open = S.open === id ? null : id;
       if (S.snap) renderAgents(S.snap);
       fitSoon();
     });
+    enableTileDrag(b);
     paintIcons(b);
     return b;
   }
+
+  // ------------------------------------------------------------------ reorder tiles and agent rows: drag, or Alt+arrow keys
+  // The dragged item takes the slot under the pointer as it moves, and the others slide out of the way.
+  const loadList = (k) => { try { const v = JSON.parse(store.get(k, "[]")); return Array.isArray(v) ? v : []; } catch (e) { return []; } };
+  S.tileOrder = loadList("ab.tileOrder");
+  S.rowOrder = loadList("ab.rowOrder");  // session ids, in the order you put them
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
+
+  function slide(box, change) {  // move tiles in the DOM, animating each from where it was (FLIP)
+    const before = new Map([...box.children].map((el) => [el, el.getBoundingClientRect()]));
+    change();
+    if (reduceMotion.matches) return;
+    for (const el of box.children) {
+      const a = before.get(el), z = el.getBoundingClientRect();
+      if (!a || el.classList.contains("dragging") || (a.left === z.left && a.top === z.top)) continue;
+      el.animate([{ transform: `translate(${a.left - z.left}px, ${a.top - z.top}px)` }, { transform: "none" }],
+                 { duration: 180, easing: "cubic-bezier(0.22, 1, 0.36, 1)" });
+    }
+  }
+  function saveTileOrder() {
+    const now = [...$("types").children].map((el) => el.dataset.tile).filter(Boolean);
+    // keep the place of types that are not running right now
+    S.tileOrder = [...now, ...S.tileOrder.filter((id) => !now.includes(id))];
+    store.set("ab.tileOrder", JSON.stringify(S.tileOrder));
+  }
+  const enableTileDrag = (b) => makeSortable(b, { selector: ".type", done: saveTileOrder });
+
+  // Make an item draggable among its siblings. canSwap(other) limits where it may go; done() saves the new order.
+  function makeSortable(item, { selector, canSwap = () => true, done }) {
+    item.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      const box = item.parentNode, x0 = e.clientX, y0 = e.clientY;
+      let dragging = false;
+      const move = (ev) => {
+        if (!dragging) {
+          if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;  // still a click
+          dragging = true;
+          S.dragging = true;
+          item.classList.add("dragging");
+          try { item.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
+        }
+        // a list that scrolls (the five-row agent list) scrolls when you drag near its top or bottom edge
+        if (box.scrollHeight > box.clientHeight) {
+          const r = box.getBoundingClientRect();
+          if (ev.clientY < r.top + 24) box.scrollTop -= 12;
+          else if (ev.clientY > r.bottom - 24) box.scrollTop += 12;
+        }
+        // find the slot under the pointer from each item's place in the layout, not from what is drawn: items that
+        // are still sliding into place are drawn where they were, and hit-testing them makes the order flip back
+        const r = box.getBoundingClientRect();
+        const px = ev.clientX - r.left - box.clientLeft + box.scrollLeft, py = ev.clientY - r.top - box.clientTop + box.scrollTop;
+        const target = [...box.children].find((el) => el !== item && el.matches(selector) &&
+          px >= el.offsetLeft && px < el.offsetLeft + el.offsetWidth && py >= el.offsetTop && py < el.offsetTop + el.offsetHeight);
+        if (!target || !canSwap(target)) return;
+        const kids = [...box.children];
+        slide(box, () => box.insertBefore(item, kids.indexOf(target) > kids.indexOf(item) ? target.nextSibling : target));
+      };
+      const up = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", up);
+        if (!dragging) return;
+        item.classList.remove("dragging");
+        item._dragged = true;
+        setTimeout(() => { item._dragged = false; }, 0);  // swallow only the click that ends this drag
+        S.dragging = false;
+        done(item);
+        checkLayout();
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", up);
+    });
+    item.addEventListener("keydown", (e) => {
+      if (!e.altKey || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return;
+      e.preventDefault();
+      const box = item.parentNode, back = e.key === "ArrowLeft" || e.key === "ArrowUp";
+      const sib = back ? item.previousElementSibling : item.nextElementSibling;
+      if (!sib || !canSwap(sib)) return;
+      slide(box, () => box.insertBefore(item, back ? sib : sib.nextSibling));
+      done(item);
+      item.focus();
+    });
+  }
+
+  // Agent rows: pinned and unpinned rows each keep to their own part of the list.
+  function saveRowOrder(item) {
+    const grid = item.parentNode;
+    const sids = (pinned) => [...grid.children].filter((el) => el.classList.contains("is-pinned") === pinned).map((el) => el.dataset.sid);
+    if (item.classList.contains("is-pinned")) {
+      const now = sids(true);
+      MARK.pins = [...now, ...MARK.pins.filter((s) => !now.includes(s))];
+      saveMarks();
+    } else {
+      const now = sids(false);
+      S.rowOrder = [...now, ...S.rowOrder.filter((s) => !now.includes(s))].slice(0, 300);
+      store.set("ab.rowOrder", JSON.stringify(S.rowOrder));
+    }
+    if (S.snap) renderAgents(S.snap);  // the other list (Pinned, or the open type) follows the new order
+  }
+  const ordered = (list) => {  // pinned first in your pin order, then your order, then the rest as they come
+    const rest = list.filter((a) => !isPinned(a));
+    const rank = (a, i) => (S.rowOrder.includes(a.sid) ? S.rowOrder.indexOf(a.sid) : 1000 + i);
+    return [...pinnedOf(list), ...rest.map((a, i) => [rank(a, i), a]).sort((p, q) => p[0] - q[0]).map((p) => p[1])];
+  };
 
   function makeRow() {
     const b = document.createElement("button");
@@ -260,8 +373,10 @@
         <span class="surface"><span class="icon"></span><span class="surface-label"><b></b><span></span></span></span></span>
       <span class="side"><span class="tok mono"></span><span class="since"></span></span>
       <span class="go"><span class="icon" data-icon="arrow-up-right"></span></span>`;
-    b.addEventListener("click", () => jump(b));
+    b.addEventListener("click", () => { if (b._dragged) { b._dragged = false; return; } jump(b); });
     b.addEventListener("contextmenu", (e) => { e.preventDefault(); openCtx(b, e); });
+    makeSortable(b, { selector: ".agent", done: saveRowOrder,
+                      canSwap: (other) => other.classList.contains("is-pinned") === b.classList.contains("is-pinned") });
     paintIcons(b);
     return b;
   }
@@ -292,7 +407,7 @@
     since.textContent = a.status === "approval" ? "approve?" : a.status === "working" ? "working" : a.since || "";
     since.className = `since${a.status === "approval" ? " approval" : ""}`;
     const extra = [a.model, a.folder && `folder ${a.folder}`, `pid ${a.pid}`].filter(Boolean).join(" · ");
-    b.title = `${a.name}\n${a.surface}\n${extra}\nClick to open it, right-click to pin or highlight it`;
+    b.title = `${a.name}\n${a.surface}\n${extra}`;  // information only, no how-to hints
     b.setAttribute("aria-label", `${a.name}, ${a.status.replace("_", " ")}, ${a.surface}. Open it`);
   }
 
@@ -317,6 +432,11 @@
       return { id, name: ag[0].type_name, color: ag[0].color, agents: ag };
     }));
     if (S.open && !list.some((f) => f.id === S.open)) S.open = null;
+    // your order first (drag a tile to change it), then any type you have not placed yet
+    const rank = (id, i) => (S.tileOrder.includes(id) ? S.tileOrder.indexOf(id) : 1000 + i);
+    const ranked = list.map((f, i) => [rank(f.id, i), f]).sort((p, q) => p[0] - q[0]).map((p) => p[1]);
+    list.length = 0;
+    list.push(...ranked);
 
     const seen = new Set();
     list.forEach((f, i) => {
@@ -332,8 +452,8 @@
         return n ? `<span class="cnt s-${s}">${n} ${label}</span>` : "";
       }).join("");
       b.querySelector(".counts").innerHTML = counts || `<span class="cnt none">all idle</span>`;
-      b.title = S.open === f.id ? "Hide these agents" : "Show these agents";
-      if (box.children[i] !== b) box.insertBefore(b, box.children[i] || null);
+      if (S.dragging) { if (!b.parentNode) box.appendChild(b); }  // leave the order alone mid-drag
+      else if (box.children[i] !== b) box.insertBefore(b, box.children[i] || null);
       seen.add(f.id);
     });
     for (const [id, b] of tiles) if (!seen.has(id)) { b.remove(); tiles.delete(id); }
@@ -348,7 +468,7 @@
     if (!open) { detail.innerHTML = ""; rows.clear(); return; }
     let grid = detail.querySelector(".detail-grid");
     if (!grid) { grid = document.createElement("div"); grid.className = "detail-grid"; detail.appendChild(grid); }
-    syncRows(grid, pinFirst(open.agents), rows);
+    syncRows(grid, ordered(open.agents), rows);
   }
 
   // Put one row per agent into a grid, reusing row elements (keyed by agent) so focus and hover survive refreshes.
@@ -362,7 +482,7 @@
       return b;
     });
     const same = want.length === grid.children.length && want.every((b, j) => grid.children[j] === b);
-    if (!same) { grid.innerHTML = ""; want.forEach((b) => grid.appendChild(b)); }
+    if (!same && !S.dragging) { grid.innerHTML = ""; want.forEach((b) => grid.appendChild(b)); }  // not mid-drag
     for (const [k, b] of map) if (!keep.has(k)) { b.remove(); map.delete(k); }
   }
 
@@ -406,7 +526,11 @@
       if (s) applyMark((sid) => { if (s.dataset.hl) MARK.hl[sid] = s.dataset.hl; else delete MARK.hl[sid]; });
     });
     $("ctx-open").addEventListener("click", () => { const r = ctxRow; closeCtx(); if (r) jump(r); });
-    document.addEventListener("mousedown", (e) => { if (!$("ctx").hidden && !e.target.closest("#ctx")) closeCtx(); });
+    document.addEventListener("mousedown", (e) => {
+      if (!$("ctx").hidden && !e.target.closest("#ctx")) closeCtx();
+      if (S.addOpen && !e.target.closest("#add-panel, #btn-add")) openAdd(false);  // a click elsewhere closes the add panel
+    });
+    window.addEventListener("resize", () => { if (S.addOpen) placeAddPanel(); });
     window.addEventListener("blur", closeCtx);
     $("main").addEventListener("scroll", closeCtx, { passive: true });
   }
@@ -433,8 +557,12 @@
   function contentHeight() {
     const page = $(`page-${S.page}`), banner = $("banner");
     const bottom = parseFloat(getComputedStyle($("main")).paddingBottom) || 0;
-    return Math.ceil($("titlebar").offsetHeight + $("toolbar").offsetHeight + (banner.hidden ? 0 : banner.offsetHeight + 12) +
-                     page.offsetHeight + bottom + 2);
+    const h = $("titlebar").offsetHeight + $("toolbar").offsetHeight + (banner.hidden ? 0 : banner.offsetHeight + 12) +
+              page.offsetHeight + bottom + 2;
+    // a short window grows while the add panel is open, so the whole list fits; it shrinks back when the panel closes
+    const pop = $("add-panel");
+    const popBottom = pop.hidden ? 0 : pop.getBoundingClientRect().top + pop.scrollHeight + 10;
+    return Math.ceil(Math.max(h, popBottom));
   }
   // page width: the landscape panel, or a narrow one in single-column mode
   const WIDE = 704, NARROW = 384;
@@ -524,6 +652,7 @@
       $(`page-${p}`).hidden = p !== page;
     }
     $("btn-add").hidden = page !== "usage";  // monitors live on the Usage page
+    if (page !== "usage" && S.addOpen) { S.addOpen = false; $("add-panel").hidden = true; }
     syncCols();
     checkLayout();
   }
@@ -573,10 +702,11 @@
     if (!S.maximized) fitSoon();
   }
   function openAdd(open) {
-    S.addOpen = !!open;
+    S.addOpen = !!open && S.page === "usage";
     if (S.snap) renderUsage(S.snap);
     checkLayout();
-    if (S.addOpen) { showPage("usage"); $("main").scrollTop = 0; }  // the strip sits at the top of the Usage page
+    if (S.addOpen) { const first = $("add-list").querySelector(".add-item"); if (first) first.focus(); }
+    else if (document.activeElement && document.activeElement.closest("#add-panel")) $("btn-add").focus();
   }
   // handy from devtools and the screenshot script
   function markSession(sid, { pin, hl } = {}) {  // for the screenshot script: what the right-click menu does

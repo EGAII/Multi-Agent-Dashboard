@@ -30,7 +30,7 @@
       <div><b class="mono" id="t-today">0</b><span>tokens today</span></div>
       <div><b class="mono" id="t-agents">0</b><span>running</span></div>
       <div><b class="mono" id="t-working">0</b><span>working</span></div>
-      <button id="t-waiting-wrap" title="Show all agents"><b class="mono" id="t-waiting">0</b><span>need you</span></button>
+      <button id="t-waiting-wrap"><b class="mono" id="t-waiting">0</b><span>need you</span></button>
     </section>
     <div class="layout" id="layout" role="group" aria-label="Columns">
       <button class="lbtn" data-cols="3" title="3 columns" aria-label="3 columns" aria-pressed="false" data-icon="kanban"></button>
@@ -44,10 +44,6 @@
 
   <main id="main">
     <section class="page" id="page-usage" role="tabpanel" aria-labelledby="tab-usage">
-      <div class="add-panel" id="add-panel" hidden>
-        <div class="add-head">Add a monitor<button class="iconbtn" id="add-close" title="Close" aria-label="Close" data-icon="x"></button></div>
-        <div class="add-list" id="add-list" role="list"></div>
-      </div>
       <div class="cards" id="cards"></div>
     </section>
     <section class="page" id="page-agents" role="tabpanel" aria-labelledby="tab-agents" hidden>
@@ -60,6 +56,10 @@
     </section>
   </main>
 
+  <div class="pop" id="add-panel" role="dialog" aria-label="Add a monitor" hidden>
+    <div class="add-head">Add a monitor<button class="iconbtn" id="add-close" title="Close" aria-label="Close" data-icon="x"></button></div>
+    <div class="add-list" id="add-list" role="list"></div>
+  </div>
   <div class="ctx" id="ctx" role="menu" aria-label="Session" hidden>
     <button class="ctx-item" id="ctx-pin" role="menuitem"><span class="icon" data-icon="push-pin"></span><span id="ctx-pin-label">Pin to top</span></button>
     <div class="ctx-label">Highlight</div>

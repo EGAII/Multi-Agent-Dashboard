@@ -6,6 +6,7 @@ A compact, landscape, always-on-top Windows panel for all your coding agents.
 - **Columns**: small buttons in the toolbar lay out either page in 3, 2 or 1 columns.
 - **Agents page**: a tile for **All agents** and one for each agent type. Click a tile to show its agents below in a five-row scrolling list; the window grows to fit it. Each agent shows its status and where it runs: Claude Code CLI in Windows Terminal, the Claude desktop app, Codex CLI, Codex in a VS Code terminal, and so on.
 - **Pin and highlight**: right-click an agent to pin it, so it stays listed under the tiles, or to mark it with a colour.
+- **Your order**: drag the agent tiles, and the sessions in a list, to put them in the order you want.
 - **Click an agent** to open it exactly where it runs:
   - a Claude desktop session opens in the Claude app;
   - a terminal agent's own tab is selected, even when several tabs have the same title.
@@ -64,12 +65,12 @@ Other ways to run it:
 ### Choosing the monitors
 
 Each card is a monitor for one agent type. Agent types that are running now or were used recently get a monitor by default.
-- **Add one**: click the small **+** at the right of the toolbar. A strip opens at the top of the page with every agent type in your settings that has no monitor yet: Claude Code, Codex, Gemini CLI, Grok, Qwen Code, opencode, Aider, Ollama and your own. Pick one to add it, even if it hasn't been used yet. Press Esc, × or **+** again to close the strip. When every agent type has a monitor, the **+** is greyed out.
+- **Add one**: click the small **+** at the right of the toolbar. A small panel floats under it, over the monitors, listing every agent type in your settings that has no monitor yet: Claude Code, Codex, Gemini CLI, Grok, Qwen Code, opencode, Aider, Ollama and your own. Pick one to add it, even if it hasn't been used yet. If the window is too short for the list, it grows while the panel is open. Press Esc or ×, or click anywhere else, to close it. When every agent type has a monitor, the **+** is greyed out.
 - **Remove one**: click the small **× Remove** at the bottom of the monitor. It stays hidden, even while that agent is in use, until you add it back.
 
 AgentBoard remembers your choice in its window's own storage on this PC.
 
-![The add-monitor strip, opened with +](docs/usage-add.png)
+![The floating add-monitor panel, opened with +](docs/usage-add.png)
 
 ### Reading a monitor
 
@@ -119,6 +120,16 @@ Click a tile to list its agents below the tiles, and the window grows to fit the
 | `Codex · VS Code terminal`, `Claude Code · Cursor terminal` | code | the CLI in an IDE's built-in terminal |
 
 Hover over an agent to see the model, folder and process ID. Click **need you** at the top to open **All agents**.
+
+### Reorder tiles and sessions
+
+Drag a tile, **All agents** included, to where you want it; the other tiles slide out of the way. Sessions work the same way: drag a row in the open list or in the **Pinned** list. Pinned rows stay above the others, so dragging a pinned row changes the pin order.
+
+A short click still opens the tile or the session; a drag never does. If the list scrolls, dragging near its top or bottom edge scrolls it. From the keyboard, select a tile or row and press **Alt** with an arrow key to move it one place.
+
+AgentBoard remembers both orders on this PC. An agent type or session that isn't running keeps its place for when it comes back; new sessions are added after the ones you placed.
+
+![A tile being dragged to the front](docs/agents-drag.png)
 
 ### Pin and highlight important sessions
 
