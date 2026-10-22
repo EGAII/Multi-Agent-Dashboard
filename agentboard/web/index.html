@@ -23,8 +23,8 @@
 
   <div class="toolbar pywebview-drag-region" id="toolbar">
     <div class="segmented" role="tablist" aria-label="Pages">
-      <button role="tab" id="tab-usage" aria-controls="page-usage" aria-selected="true" data-page="usage" title="Usage"><span class="icon" data-icon="chart-bar-horizontal"></span><span class="tab-label">Usage</span></button>
-      <button role="tab" id="tab-agents" aria-controls="page-agents" aria-selected="false" data-page="agents" title="Agents"><span class="icon" data-icon="stack"></span><span class="tab-label">Agents</span><span class="count mono" id="agent-count">0</span></button>
+      <button role="tab" id="tab-agents" aria-controls="page-agents" aria-selected="true" data-page="agents" title="Agents"><span class="icon" data-icon="stack"></span><span class="tab-label">Agents</span><span class="count mono" id="agent-count">0</span></button>
+      <button role="tab" id="tab-usage" aria-controls="page-usage" aria-selected="false" data-page="usage" title="Usage"><span class="icon" data-icon="chart-bar-horizontal"></span><span class="tab-label">Usage</span></button>
       <button role="tab" id="tab-overview" aria-controls="page-overview" aria-selected="false" data-page="overview" title="Overview"><span class="icon" data-icon="chart-donut"></span><span class="tab-label">Overview</span></button>
     </div>
     <section class="totals" aria-label="Today">
@@ -44,10 +44,18 @@
   <div class="banner" id="banner" role="alert" hidden><span class="icon" data-icon="warning-circle"></span><span id="banner-text"></span></div>
 
   <main id="main">
+    <section class="page" id="page-agents" role="tabpanel" aria-labelledby="tab-agents">
+      <div class="types" id="types" role="toolbar" aria-label="Agent types"></div>
+      <div class="pinned" id="pinned" hidden>
+        <div class="pinned-head"><span class="icon" data-icon="push-pin"></span>Pinned</div>
+        <div class="pinned-grid" id="pinned-grid"></div>
+      </div>
+      <div class="detail" id="detail" hidden></div>
+    </section>
     <section class="page" id="page-usage" role="tabpanel" aria-labelledby="tab-usage">
       <div class="cards" id="cards"></div>
     </section>
-    <section class="page" id="page-overview" role="tabpanel" aria-labelledby="tab-overview" hidden>
+    <section class="page" id="page-overview" role="tabpanel" aria-labelledby="tab-overview">
       <div class="ov">
         <article class="card ov-card">
           <div class="head"><h3>Models</h3>
@@ -62,19 +70,17 @@
           </div>
         </article>
         <article class="card ov-card">
-          <div class="head"><h3>Tokens per day</h3><span class="run" id="ov-days-total"></span></div>
-          <div class="ov-grid"><svg id="ov-grid" role="img" aria-label="Tokens per day for the last 13 weeks"></svg></div>
-          <div class="ov-keys" id="ov-keys"></div>
+          <div class="head"><h3>Tokens per day</h3>
+            <div class="ov-month" role="group" aria-label="Month">
+              <button class="mbtn flip" id="ov-prev" title="Previous month" aria-label="Previous month" data-icon="caret-right"></button>
+              <span id="ov-month" aria-live="polite"></span>
+              <button class="mbtn" id="ov-next" title="Next month" aria-label="Next month" data-icon="caret-right"></button>
+            </div>
+          </div>
+          <div class="ov-grid"><svg id="ov-grid" role="img" aria-label="Tokens per day"></svg></div>
+          <div class="ov-foot"><div class="ov-keys" id="ov-keys"></div><span class="run" id="ov-days-total"></span></div>
         </article>
       </div>
-    </section>
-    <section class="page" id="page-agents" role="tabpanel" aria-labelledby="tab-agents" hidden>
-      <div class="types" id="types" role="toolbar" aria-label="Agent types"></div>
-      <div class="pinned" id="pinned" hidden>
-        <div class="pinned-head"><span class="icon" data-icon="push-pin"></span>Pinned</div>
-        <div class="pinned-grid" id="pinned-grid"></div>
-      </div>
-      <div class="detail" id="detail" hidden></div>
     </section>
   </main>
 

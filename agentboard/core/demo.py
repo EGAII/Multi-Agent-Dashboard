@@ -18,6 +18,7 @@ TYPES = [
      (120_000, None, None, 95), (1_480_000, None, None, None)),
 ]
 # the Overview page: each agent's usual tokens on a weekday, and its models' shares
+DEMO_DAYS = 120  # made-up history for the Overview page, about four months
 DAILY = {"claude": 4_600_000, "codex": 1_700_000, "gemini": 600_000, "ollama": 250_000}
 MODELS = {"claude": [("claude-opus-5-5", 0.64), ("claude-sonnet-5-5", 0.26), ("claude-fable-5-1", 0.10)],
           "codex": [("gpt-5.5-codex", 0.85), ("gpt-5.6-luna", 0.15)], "gemini": [("gemini-3-pro", 1.0)],
@@ -104,10 +105,10 @@ class DemoEngine:
 
     @staticmethod
     def _overview():
-        """13 weeks of made-up daily use: busier on weekdays, a few quiet days, Codex and Gemini on some days only."""
+        """About four months of made-up daily use: busier on weekdays, a few quiet days, Codex and Gemini on some days only."""
         today = dt.date.today()
         days, totals = {}, {"7d": {}, "30d": {}}
-        for back in range(usage.OVERVIEW_DAYS):
+        for back in range(DEMO_DAYS):
             d = today - dt.timedelta(days=back)
             seed = (d.toordinal() * 2654435761) % 1000 / 1000  # steady pseudo-random per day
             if d.weekday() >= 5 and seed < 0.6 or seed < 0.06:
@@ -123,6 +124,6 @@ class DemoEngine:
                         for model, part in MODELS[tid]:
                             totals[key][(tid, model)] = totals[key].get((tid, model), 0) + int(day[tid] * part)
             days[d.isoformat()] = day
-        return {"first": (today - dt.timedelta(days=usage.OVERVIEW_DAYS - 1)).isoformat(), "today": today.isoformat(),
+        return {"first": (today - dt.timedelta(days=DEMO_DAYS - 1)).isoformat(), "today": today.isoformat(),
                 "days": days, "models": {k: sorted(({"type_id": t, "model": m, "tokens": n} for (t, m), n in v.items()),
                                                    key=lambda r: -r["tokens"]) for k, v in totals.items()}}

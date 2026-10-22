@@ -13,6 +13,7 @@
 }
 
 :root {
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --bg: #f4f4f5;
   --surface: #ffffff;
   --surface-2: #f4f4f6;
@@ -116,15 +117,20 @@ button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 0 12px 10px; flex: none; }
 .segmented { display: inline-grid; grid-auto-flow: column; gap: 2px; padding: 2px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; }
 .segmented button {
-  display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 11px; border-radius: 999px;
-  color: var(--ink-3); font-weight: 500; transition: background-color 160ms, color 160ms;
+  display: inline-flex; align-items: center; height: 26px; padding: 0 11px; border-radius: 999px;
+  color: var(--ink-3); font-weight: 500; transition: background-color 220ms, color 220ms, padding 280ms var(--ease);
 }
 .segmented button .icon { width: 14px; height: 14px; }
 .segmented button[aria-selected="true"] { background: var(--ink); color: var(--surface); }
-.segmented button[aria-selected="false"] .tab-label { display: none; }  /* only the open page shows its name; the others an icon */
+/* only the open page shows its name, the others an icon; the name opens and closes instead of popping */
+.segmented .tab-label {
+  display: inline-block; overflow: hidden; white-space: nowrap; max-width: var(--w, 80px); margin-left: 5px;
+  transition: max-width 280ms var(--ease), margin-left 280ms var(--ease), opacity 200ms ease 60ms;
+}
+.segmented button[aria-selected="false"] .tab-label { max-width: 0; margin-left: 0; opacity: 0; transition-delay: 0ms; }
 .segmented button[aria-selected="false"] { padding: 0 9px; }
 .segmented button:not([aria-selected="true"]):hover { color: var(--ink); }
-.segmented .count { font-size: 10.5px; min-width: 17px; height: 16px; padding: 0 5px; border-radius: 999px; display: inline-grid; place-items: center; background: var(--surface-2); color: var(--ink-2); }
+.segmented .count { margin-left: 5px; font-size: 10.5px; min-width: 17px; height: 16px; padding: 0 5px; border-radius: 999px; display: inline-grid; place-items: center; background: var(--surface-2); color: var(--ink-2); }
 .segmented button[aria-selected="true"] .count { background: color-mix(in srgb, var(--surface) 22%, transparent); color: var(--surface); }
 
 .totals { display: flex; padding: 5px 2px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); }
@@ -142,14 +148,29 @@ button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .lbtn .icon { width: 14px; height: 14px; }
 .lbtn:hover { color: var(--ink); }
 .lbtn[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
-.addbtn { width: 30px; height: 30px; border-radius: 999px; display: grid; place-items: center; color: var(--ink-2); background: var(--surface); border: 1px solid var(--line); transition: border-color 120ms, color 120ms; }
+.addbtn { width: 30px; height: 30px; border-radius: 999px; display: grid; place-items: center; color: var(--ink-2); background: var(--surface); border: 1px solid var(--line); transition: border-color 120ms, color 120ms, opacity 180ms; }
 .addbtn .icon { width: 14px; height: 14px; }
 .addbtn:hover:not(:disabled), .addbtn[aria-expanded="true"] { border-color: var(--ink); color: var(--ink); }
 .addbtn:disabled { cursor: default; opacity: 0.45; }
-.addbtn[hidden] { display: none; }
+.addbtn.away { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 140ms, visibility 0s linear 140ms; }  /* other pages: keeps its place */
 
-main { flex: 1; overflow-y: auto; padding: 0 12px 12px; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
-.page[hidden] { display: none; }
+main {
+  flex: 1; overflow-y: auto; overflow-x: hidden; padding: 0 12px 12px; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent;
+  display: grid; grid-template-columns: minmax(0, 1fr); align-content: start;
+}
+/* The pages share one cell, so the tallest sets the window height and switching pages never resizes it.
+   The open page slides in from the side of its tab while the old one fades out the other way. */
+.page {
+  grid-area: 1 / 1; min-width: 0; opacity: 0; visibility: hidden; pointer-events: none; transform: translateX(var(--from, 0));
+  transition: opacity 160ms ease, transform 300ms var(--ease), visibility 0s linear 300ms;
+}
+.page[data-pos="before"] { --from: -16px; }
+.page[data-pos="after"] { --from: 16px; }
+.page[data-pos="current"] {
+  opacity: 1; visibility: visible; pointer-events: auto; transform: none;
+  transition: opacity 240ms ease 50ms, transform 320ms var(--ease) 20ms, visibility 0s;
+}
+body.still .page[data-pos], body.still .segmented * { transition: none !important; }
 
 .banner {
   display: flex; gap: 6px; align-items: flex-start; margin: 0 12px 8px; padding: 8px 12px; border-radius: 12px;
@@ -260,7 +281,7 @@ main { flex: 1; overflow-y: auto; padding: 0 12px 12px; scrollbar-width: thin; s
 .mini-seg button { height: 20px; padding: 0 9px; border-radius: 999px; font-size: 11px; color: var(--ink-3); transition: background-color 140ms, color 140ms; }
 .mini-seg button:hover { color: var(--ink); }
 .mini-seg button[aria-selected="true"] { background: var(--ink); color: var(--surface); }
-.ov-models { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 14px; align-items: center; }
+.ov-models { flex: 1; display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 14px; align-items: center; }  /* centred when the calendar card is taller */
 .ov-donut { position: relative; width: 112px; height: 112px; }
 .ov-donut svg { width: 100%; height: 100%; display: block; }
 .ov-donut circle { transition: stroke-dasharray 500ms cubic-bezier(0.22, 1, 0.36, 1); }
@@ -274,12 +295,25 @@ main { flex: 1; overflow-y: auto; padding: 0 12px 12px; scrollbar-width: thin; s
 .ov-legend span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); }
 .ov-legend b { font-weight: 600; font-size: 12px; }
 .ov-legend em { font-style: normal; color: var(--ink-3); font-size: 11px; text-align: right; }
-.ov-grid { display: flex; justify-content: center; }
+/* tokens per day: a month calendar that fills the card's width, with arrows to step through the months */
+.ov-month { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+#ov-month { min-width: 96px; text-align: center; font-weight: 500; }
+.mbtn { width: 22px; height: 22px; border-radius: 999px; display: grid; place-items: center; color: var(--ink-3); transition: background-color 120ms, color 120ms; }
+.mbtn .icon { width: 13px; height: 13px; }
+.mbtn.flip .icon { transform: scaleX(-1); }  /* the same caret, pointing left */
+.mbtn:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
+.mbtn:disabled { opacity: 0.3; cursor: default; }
+.ov-grid { min-width: 0; }
 .ov-grid svg { display: block; overflow: visible; }
 .ov-grid svg text { font-size: 9px; fill: var(--ink-3); font-family: inherit; }
-.ov-keys { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 11px; color: var(--ink-3); }
+.ov-grid svg text.dn { font-size: 9.5px; fill: var(--ink-3); font-variant-numeric: tabular-nums; }
+.ov-grid svg text.dn.today { fill: var(--ink); font-weight: 600; }
+.ov-grid svg text.dn.future { fill: var(--line-strong); }
+.ov-foot { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; margin-top: auto; }
+.ov-foot .run { color: var(--ink-3); font-size: 11px; white-space: nowrap; }
+.ov-keys { display: flex; flex-wrap: wrap; gap: 3px 12px; font-size: 11px; color: var(--ink-2); min-width: 0; }
+.ov-keys span { white-space: nowrap; }
 .ov-keys i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: -0.5px; }
-.ov-keys .scale { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
 
 /* ------------------------------------------------------------------ agents page: type tiles, the open type's agents below */
 .types { position: relative; display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: 8px; }
@@ -418,5 +452,9 @@ body.compact .addbtn { order: 1; }
 body.compact .totals { order: 2; flex: 1 0 100%; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { transition-duration: 0ms !important; animation: none !important; }
+  *, *::before, *::after { transition-duration: 0ms !important; transition-delay: 0ms !important; animation: none !important; }
+  /* switching pages still cross-fades, without the slide, and the open tab's colour fades: neither moves anything */
+  .page { transform: none !important; transition: opacity 160ms ease, visibility 0s linear 160ms !important; }
+  .page[data-pos="current"] { transition: opacity 200ms ease, visibility 0s !important; }
+  .segmented button { transition: background-color 180ms, color 180ms !important; }
 }

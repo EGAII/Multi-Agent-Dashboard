@@ -457,19 +457,64 @@ def ollama_models():
         return None
 
 
-OVERVIEW_DAYS = 91  # 13 weeks: the daily grid on the Overview page
+class DayStore:
+    """Tokens per agent type on each past day, kept in a small JSON file so the Overview page can still show a
+    month after the agents have deleted its logs (Claude Code removes transcripts after 30 days by default).
+    It holds only dates and token counts. A day's count only grows: a log that was cleaned up never shrinks it.
+    Without a path it keeps nothing and just passes the days through."""
+
+    def __init__(self, path=None):
+        self.path, self.days = path, {}
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            self.days = {d: {t: int(n) for t, n in by.items()} for d, by in data.get("days", {}).items() if isinstance(by, dict)}
+        except (OSError, ValueError, AttributeError, TypeError):
+            self.days = {}
+
+    def merge(self, days, today):
+        """The stored days with these (read from the logs) on top; saves when a day before today grew."""
+        changed = False
+        for d, by in days.items():
+            if d >= today:
+                continue  # today is still growing: it is saved once it is over
+            for t, n in by.items():
+                if n > self.days.get(d, {}).get(t, 0):
+                    self.days.setdefault(d, {})[t] = n
+                    changed = True
+        if changed and self.path:
+            self._save()
+        out = {d: dict(by) for d, by in self.days.items()}
+        for d, by in days.items():
+            slot = out.setdefault(d, {})
+            for t, n in by.items():
+                slot[t] = max(slot.get(t, 0), n)
+        return out
+
+    def _save(self):
+        try:
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+            tmp = self.path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"version": 1, "days": dict(sorted(self.days.items()))}, f, separators=(",", ":"))
+            os.replace(tmp, self.path)
+        except OSError:
+            pass  # read-only home: the page still shows what the logs have
 
 
 class UsageModel:
-    def __init__(self, cfg):
+    def __init__(self, cfg, days_file=None):
         self.cfg = cfg
         self.cache = LogCache()
+        self.store = DayStore(days_file)
         self.by_type = {}
         self.summary = {}
         self.overview = {"days": {}, "models": {"7d": [], "30d": []}}
 
     def refresh(self):
-        days = self.cfg.get("history_days", 91)
+        days = self.cfg.get("history_days", 31)
         for a in self.cfg["agents"]:
             self.by_type[a["id"]] = self.cache.update(a, days)
             if a.get("reader") == "codex":
@@ -483,17 +528,15 @@ class UsageModel:
         self.overview = self._overview(time.time())
 
     def _overview(self, now):
-        """For the Overview page: tokens by model over 7 and 30 days, and tokens per agent type on each day of the
-        last OVERVIEW_DAYS days (local dates)."""
-        today = dt.date.today()
-        first = today - dt.timedelta(days=OVERVIEW_DAYS - 1)
-        start = dt.datetime.combine(first, dt.time()).timestamp()
+        """For the Overview page: tokens by model over 7 and 30 days, and tokens per agent type on each day (local
+        dates) that the logs or the day store have, so the page can step back through the months."""
+        today = dt.date.today().isoformat()
         days, models = {}, {"7d": {}, "30d": {}}
         for a in self.cfg["agents"]:
             tid = a["id"]
             for f in self.by_type.get(tid, []):
                 for e in f.own_events():
-                    if e.ts < start or not e.fresh:
+                    if not e.fresh:
                         continue
                     day = days.setdefault(dt.date.fromtimestamp(e.ts).isoformat(), {})
                     day[tid] = day.get(tid, 0) + e.fresh
@@ -501,7 +544,8 @@ class UsageModel:
                     for key, span in (("7d", 7), ("30d", 30)):
                         if e.ts >= now - span * 86400:
                             models[key][(tid, model)] = models[key].get((tid, model), 0) + e.fresh
-        return {"first": first.isoformat(), "today": today.isoformat(), "days": days,
+        days = self.store.merge(days, today)
+        return {"first": min(days, default=today), "today": today, "days": days,
                 "models": {k: sorted(({"type_id": t, "model": m, "tokens": n} for (t, m), n in v.items()),
                                      key=lambda r: -r["tokens"]) for k, v in models.items()}}
 

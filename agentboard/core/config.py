@@ -28,12 +28,13 @@ import os
 HOME = os.path.expanduser("~")
 APP_DIR = os.path.join(HOME, ".agentboard")
 USER_CONFIG = os.path.join(APP_DIR, "config.json")
+DAYS_FILE = os.path.join(APP_DIR, "days.json")  # tokens per agent type on each past day, for the Overview page
 
 DEFAULT_CONFIG = {
     "refresh_seconds": 3,
     "usage_refresh_seconds": 15,
     "always_on_top": True,
-    "history_days": 91,
+    "history_days": 31,
     "agents": [
         {"id": "claude", "name": "Claude Code", "color": "#d4704f",
          "match": {"exe": ["claude.exe", "claude"], "cmd_regex": r"@anthropic-ai[\\/]claude-code"},

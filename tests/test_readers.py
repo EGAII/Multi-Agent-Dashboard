@@ -8,7 +8,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agentboard.core import config as cfgmod  # noqa: E402
-from agentboard.core.usage import UsageModel  # noqa: E402
+from agentboard.core.usage import DayStore, UsageModel  # noqa: E402
 
 NOW = time.time()
 ISO = lambda t: dt.datetime.fromtimestamp(t, dt.timezone.utc).isoformat().replace("+00:00", "Z")  # noqa: E731
@@ -80,6 +80,12 @@ def main():
     m = UsageModel(cfg)
     m.refresh()
     s = m.summarize([])
+    # the day store keeps past days for the Overview: a day only grows, and today is saved once it is over
+    days_file = f"{tmp}/days.json"
+    DayStore(days_file).merge({"2026-10-20": {"claude": 500}, "2026-10-22": {"claude": 90}}, "2026-10-22")
+    merged = DayStore(days_file).merge({"2026-10-20": {"claude": 300, "codex": 7}}, "2026-10-22")
+    with open(days_file, encoding="utf-8") as f:
+        saved = json.load(f)["days"]
 
     checks = [
         ("gemini fresh tokens", s["gemini"]["today"], 1350),
@@ -100,6 +106,9 @@ def main():
         ("codex prompts", s["codex"]["windows"][1]["prompts"], 1),
         ("gemini requests and prompts today (Pacific day)", (s["gemini"]["daily"]["requests"], s["gemini"]["daily"]["prompts"]), (1, 1)),
         ("local quota", s["local"]["quota"]["kind"], "unlimited"),
+        ("overview: claude tokens today", m.overview["days"].get(dt.date.today().isoformat(), {}).get("claude"), 1360),
+        ("day store: a stored day only grows", merged["2026-10-20"], {"claude": 500, "codex": 7}),
+        ("day store: today is not saved yet", sorted(saved), ["2026-10-20"]),
     ]
     bad = 0
     for name, got, want in checks:

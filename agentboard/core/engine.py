@@ -15,7 +15,7 @@ class Engine:
     def __init__(self, cfg=None):
         self.cfg = cfg or cfgmod.load()
         self.scanner = Scanner(self.cfg)
-        self.usage = UsageModel(self.cfg)
+        self.usage = UsageModel(self.cfg, days_file=cfgmod.DAYS_FILE)
         self.agents, self.summary = [], {}
         self.error = None
         self._last_usage = 0.0

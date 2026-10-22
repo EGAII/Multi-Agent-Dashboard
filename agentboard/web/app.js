@@ -1,9 +1,9 @@
 "use strict";
 // AgentBoard page. Pulls a JSON snapshot from Python (window.pywebview.api) and patches the DOM in place,
 // keyed by agent type and agent process, so bars animate between values instead of redrawing.
-// The window keeps its width; its height follows the content, so opening an agent type's details makes it taller.
-// Each page has its own column count (3, 2 or 1), set with the small buttons in the toolbar; one column also
-// narrows the window and tightens the spacing.
+// The pages share one cell, so the window is as tall as the tallest page and keeps its size and place when you
+// switch pages; opening an agent type's details can still make it taller. One column count (3, 2 or 1), set with
+// the small buttons in the toolbar, applies to every page; one column also narrows the window and tightens the spacing.
 (() => {
   const $ = (id) => document.getElementById(id);
   const ICON = (name) => (window.ICONS && window.ICONS[name]) || "";
@@ -11,12 +11,14 @@
     get(k, d) { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage blocked: keep defaults */ } },
   };
+  const PAGES = ["agents", "usage", "overview"];
+  const firstPage = PAGES.includes(store.get("ab.page", "")) ? store.get("ab.page") : PAGES[0];
   // open: which agent type's details are shown ("all", a type id, or null). Closed on every start.
-  const S = { api: null, snap: null, lastTs: 0, page: store.get("ab.page", "usage"), open: null, maximized: false, layout: "", addOpen: false,
-              cols: { usage: Number(store.get("ab.cols.usage", 2)) || 2, agents: Number(store.get("ab.cols.agents", 2)) || 2,
-                      overview: Number(store.get("ab.cols.overview", 2)) || 2 },
-              ovSpan: store.get("ab.ovSpan", "7d") === "30d" ? "30d" : "7d", ovKey: "" };
-  const PAGES = ["usage", "agents", "overview"];
+  // cols: one setting for all pages; before it was global, each page kept its own, so start from the open page's
+  const S = { api: null, snap: null, lastTs: 0, page: firstPage, open: null, maximized: false, layout: "", addOpen: false,
+              cols: [1, 2, 3].includes(Number(store.get("ab.cols", store.get(`ab.cols.${firstPage}`, 2))))
+                ? Number(store.get("ab.cols", store.get(`ab.cols.${firstPage}`, 2))) : 2,
+              ovSpan: store.get("ab.ovSpan", "7d") === "30d" ? "30d" : "7d", ovKey: "", ovMonth: null };
 
   // ------------------------------------------------------------------ formatting
   const fmt = (n) => {
@@ -387,7 +389,8 @@
 
   // ------------------------------------------------------------------ agents page: a tile per type, its agents below
   const SURFACE_ICON = { app: "app-window", ide: "code", cli: "terminal-window" };
-  const COUNTED = [["approval", "approve"], ["your_turn", "your turn"], ["working", "working"]];
+  const COUNTED = [["approval", "approve"], ["your_turn", "waiting"], ["working", "working"]];
+  const STATUS_TEXT = { approval: "needs approval", your_turn: "waiting", working: "working", idle: "idle" };
   const tiles = new Map();     // tile id -> button
   const rows = new Map();      // agent key -> row button in the open type's list
   const pinRows = new Map();   // agent key -> row button in the Pinned list
@@ -578,7 +581,7 @@
     since.className = `since${a.status === "approval" ? " approval" : ""}`;
     const extra = [a.model, a.folder && `folder ${a.folder}`, `pid ${a.pid}`].filter(Boolean).join(" · ");
     b.title = `${a.name}\n${a.surface}\n${extra}`;  // information only, no how-to hints
-    b.setAttribute("aria-label", `${a.name}, ${a.status.replace("_", " ")}, ${a.surface}. Open it`);
+    b.setAttribute("aria-label", `${a.name}, ${STATUS_TEXT[a.status] || a.status}, ${a.surface}. Open it`);
   }
 
   function renderAgents(snap) {
@@ -743,7 +746,7 @@
     const ov = snap.overview || { days: {}, models: {} };
     const types = snap.types || [], typeOf = (id) => types.find((t) => t.id === id) || { name: id, color: "#888" };
     const key = [S.ovSpan, JSON.stringify(ov.models && ov.models[S.ovSpan]), Object.keys(ov.days || {}).length, ov.today,
-                 JSON.stringify((ov.days || {})[ov.today])].join("|");
+                 JSON.stringify((ov.days || {})[ov.today]), monthIso(shownMonth(ov).m), $("ov-grid").parentElement.clientWidth].join("|");
     $("ov-span").querySelectorAll("button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.span === S.ovSpan)));
     if (key === S.ovKey) return;
     S.ovKey = key;
@@ -794,55 +797,70 @@
     }
   }
 
-  // the grid: one small circle per day for 13 weeks, like a GitHub contribution graph. Its size shows the day's tokens
-  // (relative to the busiest day) and its slices each agent's share of that day.
+  // Tokens per day: one month as a calendar, 7 days to a row, Sunday first. Each day has its date and a circle;
+  // the circle's size shows the day's tokens next to the month's busiest day, and its slices each agent's share of
+  // that day. The arrows step through the months the logs and the day store have. Six rows are always kept, so a
+  // month of five rows or of six does not change the height.
+  const monthOf = (d) => new Date(d.getFullYear(), d.getMonth(), 1);
+  const monthIso = (d) => isoDay(d).slice(0, 7);
+  function shownMonth(ov) {
+    const cur = monthOf(fromIso(ov.today || isoDay(new Date()))), oldest = monthOf(fromIso(ov.first || ov.today || isoDay(cur)));
+    let m = S.ovMonth ? fromIso(`${S.ovMonth}-01`) : cur;
+    if (m > cur) m = cur;
+    if (m < oldest) m = oldest;
+    return { m, cur, oldest };
+  }
+  function stepMonth(by) {
+    const ov = (S.snap && S.snap.overview) || {}, { m } = shownMonth(ov);
+    S.ovMonth = monthIso(new Date(m.getFullYear(), m.getMonth() + by, 1));
+    if (S.snap) renderOverview(S.snap);
+    checkLayout();
+    const g = $("ov-grid");  // the new month slides in from the side it comes from (only fades with reduced motion)
+    if (g.animate) g.animate(matchMedia("(prefers-reduced-motion: reduce)").matches ? [{ opacity: 0.2 }, { opacity: 1 }]
+      : [{ opacity: 0, transform: `translateX(${by * 10}px)` }, { opacity: 1, transform: "none" }], { duration: 260, easing: "cubic-bezier(0.22, 1, 0.36, 1)" });
+  }
   function drawDays(ov, types, typeOf) {
-    const WEEKS = 13, CELL = 17, LEFT = 24, TOP = 14, today = fromIso(ov.today || isoDay(new Date()));
-    const start = new Date(today); start.setDate(today.getDate() - today.getDay() - (WEEKS - 1) * 7);  // a Sunday
+    const { m, cur, oldest } = shownMonth(ov), today = fromIso(ov.today || isoDay(new Date()));
+    $("ov-prev").disabled = m <= oldest;
+    $("ov-next").disabled = m >= cur;
+    $("ov-month").textContent = m.toLocaleDateString("en-US", { month: "long", year: "numeric" });
     const order = types.map((t) => t.id), days = ov.days || {};
+    const lead = m.getDay(), count = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
     const cells = [];
-    for (let c = 0; c < WEEKS; c++) {
-      for (let r = 0; r < 7; r++) {
-        const d = new Date(start); d.setDate(start.getDate() + c * 7 + r);
-        if (d > today) continue;
-        const by = days[isoDay(d)] || {};
-        cells.push({ c, r, d, by, total: Object.values(by).reduce((s, n) => s + n, 0) });
-      }
+    for (let i = 0; i < count; i++) {
+      const d = new Date(m.getFullYear(), m.getMonth(), i + 1), by = d > today ? {} : days[isoDay(d)] || {};
+      cells.push({ c: (lead + i) % 7, r: Math.floor((lead + i) / 7), d, by, future: d > today,
+                   total: Object.values(by).reduce((s, n) => s + n, 0) });
     }
     const max = Math.max(1, ...cells.map((x) => x.total));
-    const g = $("ov-grid"), W = LEFT + WEEKS * CELL, H = TOP + 7 * CELL;
+    const g = $("ov-grid"), W = Math.max(210, Math.floor(g.parentElement.clientWidth || 300));
+    const HEAD = 16, ROWH = 26, NUM = 17, CW = W / 7, H = HEAD + 6 * ROWH;
+    const maxR = Math.min(ROWH / 2 - 2, (CW - NUM) / 2 - 3);
     g.setAttribute("viewBox", `0 0 ${W} ${H}`); g.setAttribute("width", W); g.setAttribute("height", H);
     g.innerHTML = "";
-    const months = [];  // month names above the first week of each month; a partial first month gives way to the next
-    for (let c = 0; c < WEEKS; c++) {
-      const d = new Date(start); d.setDate(start.getDate() + c * 7);
-      if (!months.length || months[months.length - 1].m !== d.getMonth()) months.push({ c, m: d.getMonth(), d });
-    }
-    if (months.length > 1 && months[1].c - months[0].c < 3) months.shift();
-    for (const { c, d } of months) {
-      const text = svg("text", { x: LEFT + c * CELL + 1, y: 9 });
-      text.textContent = d.toLocaleDateString("en-US", { month: "short" });
-      g.appendChild(text);
-    }
-    [["Mon", 1], ["Wed", 3], ["Fri", 5]].forEach(([name, r]) => {
-      const text = svg("text", { x: 0, y: TOP + r * CELL + CELL / 2 + 3 });
+    ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].forEach((name, c) => {
+      const text = svg("text", { x: c * CW + CW / 2, y: 10, "text-anchor": "middle" });
       text.textContent = name;
       g.appendChild(text);
     });
-    const present = new Set();
     for (const x of cells) {
-      const cx = LEFT + x.c * CELL + CELL / 2, cy = TOP + x.r * CELL + CELL / 2;
+      // the date and its circle as a pair, centred in the cell, so they stay together in a wide (maximised) card
+      const left = x.c * CW, start = left + Math.max(2, (CW - NUM - 2 * maxR) / 2), cx = start + NUM + maxR, cy = HEAD + x.r * ROWH + ROWH / 2;
       const parts = order.filter((id) => x.by[id]).map((id) => [id, x.by[id]]);
-      parts.forEach(([id]) => present.add(id));
+      const isToday = isoDay(x.d) === ov.today;
       const when = x.d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-      const tip = x.total ? `${when}: ${fmt(x.total)} tokens · ${parts.map(([id, n]) => `${typeOf(id).name} ${share(n, x.total)}`).join(", ")}`
-                          : `${when}: no tokens`;
+      const tip = x.future ? when : x.total ? `${when}: ${fmt(x.total)} tokens · ${parts.map(([id, n]) => `${typeOf(id).name} ${share(n, x.total)}`).join(", ")}`
+                                            : `${when}: no tokens`;
       const cell = svg("g", {}, tip);
-      cell.appendChild(svg("rect", { x: cx - CELL / 2, y: cy - CELL / 2, width: CELL, height: CELL, fill: "transparent" }));
+      cell.appendChild(svg("rect", { x: left, y: cy - ROWH / 2, width: CW, height: ROWH, fill: "transparent" }));
+      const num = svg("text", { x: start, y: cy + 3, class: `dn${isToday ? " today" : x.future ? " future" : ""}` });
+      num.textContent = x.d.getDate();
+      cell.appendChild(num);
+      if (x.future) { g.appendChild(cell); continue; }
       if (!x.total) {
-        cell.appendChild(svg("circle", { cx, cy, r: 1.4, style: "fill: var(--line-strong)" }));
+        cell.appendChild(svg("circle", { cx, cy, r: 1.5, style: "fill: var(--line-strong)" }));
       } else {
-        const rad = 2.4 + 4.8 * Math.sqrt(x.total / max);
+        const rad = 2.6 + (maxR - 2.6) * Math.sqrt(x.total / max);
         if (parts.length === 1) {
           cell.appendChild(svg("circle", { cx, cy, r: rad, style: `fill: ${typeOf(parts[0][0]).color}` }));
         } else {
@@ -855,14 +873,15 @@
           }
         }
       }
-      if (isoDay(x.d) === ov.today) cell.appendChild(svg("circle", { cx, cy, r: 8, fill: "none", style: "stroke: var(--ink); stroke-width: 1" }));
+      if (isToday) cell.appendChild(svg("circle", { cx, cy, r: maxR + 1.6, fill: "none", style: "stroke: var(--ink); stroke-width: 1" }));
       g.appendChild(cell);
     }
     const total = cells.reduce((s, x) => s + x.total, 0), active = cells.filter((x) => x.total).length;
-    $("ov-days-total").textContent = `${WEEKS} weeks · ${fmt(total)} · ${active} active days`;
-    $("ov-keys").innerHTML = [...present].map((id) => `<span><i style="background:${typeOf(id).color}"></i>${typeOf(id).name}</span>`).join("") +
-      `<span class="scale">fewer<svg width="44" height="12" viewBox="0 0 44 12" aria-hidden="true">` +
-      [3, 4.5, 6].map((r, i) => `<circle cx="${6 + i * 15}" cy="6" r="${r}" style="fill: var(--ink-3)"></circle>`).join("") + `</svg>more</span>`;
+    $("ov-days-total").textContent = total ? `${fmt(total)} · ${active} active day${active === 1 ? "" : "s"}` : "no tokens";
+    g.setAttribute("aria-label", `Tokens per day in ${$("ov-month").textContent}: ${fmt(total)} in total`);
+    // the key: every agent that appears in the history, so it stays the same from month to month
+    const present = order.filter((id) => Object.values(days).some((by) => by[id]));
+    $("ov-keys").innerHTML = present.map((id) => `<span><i style="background:${typeOf(id).color}"></i>${typeOf(id).name}</span>`).join("");
   }
 
   // ------------------------------------------------------------------ window height follows the content
@@ -872,10 +891,12 @@
     fitTimer = setTimeout(() => requestAnimationFrame(fit), 30);
   }
   function contentHeight() {
-    const page = $(`page-${S.page}`), banner = $("banner");
+    const banner = $("banner");
     const bottom = parseFloat(getComputedStyle($("main")).paddingBottom) || 0;
+    // the pages are stacked in one cell, so the tallest one sets the height whichever page is open
+    const pages = Math.max(...PAGES.map((p) => $(`page-${p}`).offsetHeight));
     const h = $("titlebar").offsetHeight + $("toolbar").offsetHeight + (banner.hidden ? 0 : banner.offsetHeight + 12) +
-              page.offsetHeight + bottom + 2;
+              pages + bottom + 2;
     // a short window grows while a floating panel (add, plan) is open, so all of it fits; it shrinks back afterwards
     const popBottom = Math.max(0, ...[$("add-panel"), $("plan-panel")].filter((p) => !p.hidden)
       .map((p) => p.getBoundingClientRect().top + p.scrollHeight + 10));
@@ -889,7 +910,7 @@
   });
   async function fit(again = true) {
     if (!S.api || S.maximized) return;
-    const wantW = S.cols[S.page] === 1 ? NARROW : WIDE;
+    const wantW = S.cols === 1 ? NARROW : WIDE;
     if (Math.abs(window.innerWidth - wantW) > 2) {  // width first, so the height is measured at the final width
       try { await S.api.set_width(wantW); } catch (e) { /* keep the current width */ }
       await nextResize();
@@ -898,9 +919,10 @@
     // check once more after the window has settled, in case the layout moved meanwhile
     if (again) setTimeout(() => { if (Math.abs(window.innerHeight - contentHeight()) > 3) fit(false); }, 250);
   }
-  // Refit only when something that changes the height changed, not on every refresh.
+  // Refit only when something that changes the height changed, not on every refresh. The open page is not part
+  // of it: every page is measured, so switching pages leaves the window as it is.
   function checkLayout() {
-    const sig = [S.page, S.open, S.cols[S.page], cards.size, S.addOpen, addKey, S.planFor, $("plan-custom").hidden, S.ovKey,
+    const sig = [S.open, S.cols, cards.size, S.addOpen, addKey, S.planFor, $("plan-custom").hidden, S.ovKey,
                  $("cards").querySelectorAll(".brow").length, tiles.size,
                  $("detail").querySelectorAll(".agent").length, pinRows.size, $("banner").hidden].join("|");
     if (sig !== S.layout) { S.layout = sig; fitSoon(); }
@@ -964,31 +986,41 @@
     checkLayout();
   }
 
+  // Pages slide in from the side of their tab and fade (styles.css): the ones left of the open page wait on the
+  // left, the ones right of it on the right. A page that is not shown is inert, so it takes no clicks or focus.
   function showPage(page) {
-    if (!PAGES.includes(page)) page = "usage";
+    if (!PAGES.includes(page)) page = PAGES[0];
     S.page = page; store.set("ab.page", page);
-    for (const p of PAGES) {
+    const at = PAGES.indexOf(page);
+    PAGES.forEach((p, i) => {
       $(`tab-${p}`).setAttribute("aria-selected", String(p === page));
-      $(`page-${p}`).hidden = p !== page;
-    }
-    $("btn-add").hidden = page !== "usage";  // monitors live on the Usage page
-    if (page !== "usage" && S.addOpen) { S.addOpen = false; $("add-panel").hidden = true; }
+      const el = $(`page-${p}`);
+      el.dataset.pos = i < at ? "before" : i > at ? "after" : "current";
+      el.inert = p !== page;
+      el.setAttribute("aria-hidden", String(p !== page));
+    });
+    $("btn-add").classList.toggle("away", page !== "usage");  // monitors live on the Usage page; the + keeps its place
+    if (page !== "usage" && S.addOpen) { S.addOpen = false; $("add-panel").hidden = true; $("btn-add").setAttribute("aria-expanded", "false"); }
     if (page !== "usage") closePlan();
-    syncCols();
     checkLayout();
   }
 
-  // ------------------------------------------------------------------ column switch (per page)
+  // each tab's name opens to its own width (styles.css animates max-width up to it)
+  function measureTabs() {
+    document.querySelectorAll(".segmented .tab-label").forEach((l) => l.style.setProperty("--w", `${l.scrollWidth}px`));
+  }
+
+  // ------------------------------------------------------------------ column switch (one for every page)
   function syncCols() {
     for (const p of PAGES) {
-      $(`page-${p}`).style.setProperty("--cols", S.cols[p]);
-      $(`page-${p}`).dataset.cols = S.cols[p];
+      $(`page-${p}`).style.setProperty("--cols", S.cols);
+      $(`page-${p}`).dataset.cols = S.cols;
     }
-    document.querySelectorAll("#layout .lbtn").forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.cols) === S.cols[S.page])));
-    document.body.classList.toggle("compact", S.cols[S.page] === 1);  // single column: the narrow, compact panel
+    document.querySelectorAll("#layout .lbtn").forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.cols) === S.cols)));
+    document.body.classList.toggle("compact", S.cols === 1);  // single column: the narrow, compact panel
   }
-  function setCols(n, page = S.page) {
-    S.cols[page] = n; store.set(`ab.cols.${page}`, n);
+  function setCols(n) {
+    S.cols = n; store.set("ab.cols", n);
     syncCols();
     checkLayout();
   }
@@ -1049,12 +1081,15 @@
   }
   const openPlanFor = (id) => { const c = document.querySelector(`#cards .card[data-id="${id}"] .plan-chip`); if (c) openPlan(id, c); };
   window.agentboard = { showPage, setTheme, openFold, toggleMax, setCols, openAdd, addMonitor, removeMonitor, markSession, rightClick,
-                        setPlan, openPlanFor, closePlan };
+                        setPlan, openPlanFor, closePlan, stepMonth };
 
   function wire() {
     paintIcons();
     renderSkeleton();
+    syncCols();
+    document.body.classList.add("still");  // the first page shows without sliding in
     showPage(S.page);
+    requestAnimationFrame(() => requestAnimationFrame(() => document.body.classList.remove("still")));
     syncThemeIcon();
     matchMedia("(prefers-color-scheme: dark)").addEventListener("change", syncThemeIcon);
 
@@ -1064,6 +1099,9 @@
       if (S.snap) renderOverview(S.snap);
       checkLayout();
     }));
+    $("ov-prev").addEventListener("click", () => stepMonth(-1));
+    $("ov-next").addEventListener("click", () => stepMonth(1));
+    window.addEventListener("resize", () => { if (S.snap) renderOverview(S.snap); });  // the calendar fills its card's width
     $("t-waiting-wrap").addEventListener("click", () => { showPage("agents"); openFold("all"); });
     $("btn-theme").addEventListener("click", () => setTheme(effectiveTheme() === "dark" ? "light" : "dark"));
     $("btn-pin").addEventListener("click", async () => {
@@ -1092,7 +1130,8 @@
       else if (e.key === "Escape" && S.addOpen) openAdd(false);
       else if (e.key === "Escape" && S.planFor) closePlan();
     });
-    if (document.fonts) document.fonts.ready.then(() => { S.layout = ""; checkLayout(); });
+    measureTabs();
+    if (document.fonts) document.fonts.ready.then(() => { measureTabs(); S.layout = ""; checkLayout(); });
     setInterval(tickClock, 1000);
   }
 

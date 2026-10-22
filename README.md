@@ -2,10 +2,11 @@
 
 A compact, landscape, always-on-top Windows panel for all your coding agents.
 
+- **Three pages, in this order: Agents, Usage and Overview.** Switching pages never moves or resizes the window, and the new page slides and fades in.
+- **Agents page**: a tile for **All agents** and one for each agent type. Click a tile to show its agents below in a five-row scrolling list; the window grows if it needs the room. Each agent shows its status and where it runs: Claude Code CLI in Windows Terminal, the Claude desktop app, Codex CLI, Codex in a VS Code terminal, and so on.
 - **Usage page**: a monitor (card) per agent type, with a bar for each limit window: the 5-hour window, the last 7 days and, for Claude, Fable's own weekly window. Each bar shows tokens used as a % of the quota. The small **+** adds a monitor for any agent type, and **× Remove** hides one.
-- **Overview page**: each model's share of your tokens over 7 or 30 days, and a 13-week grid of days, like a GitHub contribution graph, where each day's circle shows how much you used and how it split between agents.
-- **Columns**: small buttons in the toolbar lay out either page in 3, 2 or 1 columns.
-- **Agents page**: a tile for **All agents** and one for each agent type. Click a tile to show its agents below in a five-row scrolling list; the window grows to fit it. Each agent shows its status and where it runs: Claude Code CLI in Windows Terminal, the Claude desktop app, Codex CLI, Codex in a VS Code terminal, and so on.
+- **Overview page**: each model's share of your tokens over 7 or 30 days, and a calendar of tokens per day, a month at a time with arrows to go back, where each day's circle shows how much you used and how it split between agents.
+- **Columns**: small buttons in the toolbar lay out every page in 3, 2 or 1 columns. It is one setting for all pages.
 - **Pin and highlight**: right-click an agent to pin it, so it stays listed under the tiles, or to mark it with a colour.
 - **Your order**: drag the agent tiles, and the sessions in a list, to put them in the order you want.
 - **Click an agent** to open it exactly where it runs:
@@ -29,7 +30,7 @@ These screenshots use the built-in demo data (`--demo`), so the names are made u
    - On the first run it installs `psutil` and `pywebview`.
    - The window is drawn by Microsoft Edge WebView2, which comes with Windows 11.
 
-The window opens in the bottom-right corner and stays on top of other windows. Its width is fixed: about 720px, or about 400px in single-column mode. Its height follows what is shown, and in the lower half of the screen it grows upwards, so it stays clear of the taskbar.
+The window opens in the bottom-right corner and stays on top of other windows. Its width is fixed: about 720px, or about 400px in single-column mode. Its height fits the tallest of the three pages, so switching pages leaves the window where it is and the same size. It changes only when the content does, for example when an Agents list opens or a monitor is added. In the lower half of the screen it grows upwards, so it stays clear of the taskbar.
 
 In the title bar:
 - the moon or sun icon switches between light and dark (it follows Windows until you choose);
@@ -38,20 +39,22 @@ In the title bar:
 - minimise, maximise and close. Maximise fills the screen the window is on, above the taskbar, and the cards spread into one row. Click it again, or double-click the title bar, to go back.
 
 Under the title bar, on the right:
-- three small buttons set the columns: 3, 2 or 1. Each page keeps its own choice, and on the Agents page it applies to both the tiles and the agent list;
+- three small buttons set the columns: 3, 2 or 1. The choice applies to every page, and on the Agents page to both the tiles and the agent list;
 - on the Usage page, a small **+** adds a monitor (see below).
 
 The dot next to the name is green while the data is live, and grey if refreshing has stopped. Hover over it to see when the data last updated.
 
 One column makes the window narrow:
 - it shrinks to about 400px, keeping its right edge where it was;
-- today's totals move to their own row under the Usage / Agents switch.
+- today's totals move to their own row under the page switch.
 
 Switching back to 2 or 3 columns widens the window again.
 
 ![Single-column compact mode](docs/compact-usage.png)
 
-The page switch shows the name of the open page; the other pages show just their icon. Press **Ctrl+1** for Usage, **Ctrl+2** for Agents and **Ctrl+3** for Overview. Drag the bare title bar to move the window.
+The page switch shows the name of the open page; the other pages show just their icon. Press **Ctrl+1** for Agents, **Ctrl+2** for Usage and **Ctrl+3** for Overview. Drag the bare title bar to move the window.
+
+When you switch, the open tab's name unfolds and the new page slides in from that tab's side while the old one fades out. If Windows **Animation effects** is off (Settings > Accessibility > Visual effects), the pages only cross-fade, without sliding.
 
 Other ways to run it:
 
@@ -132,11 +135,13 @@ The window keeps its width. In 2 or 3 columns the two cards sit side by side, an
   - A model takes its agent's colour. A second or third model of the same agent, such as Sonnet next to Opus, gets a lighter tint of it.
   - Past six models, the rest go into **Other models**.
   - The legend lists each model's share and tokens. Hover over a slice for its agent.
-- **Tokens per day**: 13 weeks of days, like a GitHub contribution graph, with Sunday at the top and today ringed.
-  - Each day is a small circle. Its size shows the day's tokens compared with your busiest day in the grid, and its slices show each agent's share of that day.
+- **Tokens per day**: one month as a calendar, a row per week with Sunday first, filling the card's width. Today's date is bold and its circle is ringed.
+  - Each day shows its date and a circle. The circle's size shows the day's tokens compared with the month's busiest day, and its slices show each agent's share of that day.
+  - The **‹ ›** arrows step to the previous or next month, back to the first month AgentBoard has data for. It opens on the current month.
+  - Under the calendar: the agents' colours and the month's tokens and active days.
   - Hover over a day for its date, tokens and split.
 
-Days are your PC's local dates. AgentBoard reads the last 13 weeks of logs for this.
+Days are your PC's local dates. Agents delete old logs (Claude Code removes transcripts after 30 days by default), so AgentBoard keeps each finished day's tokens per agent type in `%USERPROFILE%\.agentboard\days.json`. Past months then stay on the calendar after their logs are gone. The calendar starts from the oldest day in your logs or in that file.
 
 ![The Overview page](docs/overview.png)
 
@@ -144,13 +149,13 @@ The agent colours were checked with a colour-vision validator in light and dark 
 
 ## Agents page: where each agent runs
 
-The page starts with tiles only: one for **All agents** and one for each agent type. Each tile shows its agent count, and how many need approval (red), are waiting for your turn (amber) and are working (green).
+The page starts with tiles only: one for **All agents** and one for each agent type. Each tile shows its agent count, and how many need approval (red), are waiting for you (amber) and are working (green).
 
 Click a tile to list its agents below the tiles, and the window grows to fit the list. The list is always five rows tall, with 3, 2 or 1 agents per row depending on the column setting; any more scroll inside it. Click the tile again to hide the list, and the window shrinks back. Only one tile is open at a time. Each agent shows:
 - the session title;
 - a status dot:
   - red: it stopped on a tool call, probably waiting for approval;
-  - amber: your turn, because it finished and is waiting for you;
+  - amber: waiting, because it finished and is waiting for you;
   - green, pulsing: working;
   - grey: idle;
 - its tokens in this session;
@@ -273,6 +278,8 @@ AgentBoard only reads files on this PC:
 - agent logs: token counts, timestamps, models and session titles, never the conversation text;
 - Codex's state database, in read-only mode;
 - the Claude app's session records: only the ids, title, archive flag and last activity time.
+
+For the Overview calendar it keeps `days.json` in `%USERPROFILE%\.agentboard`: dates and token counts per agent type, nothing else. Your choices on the page (monitors, plans, pins, order) stay in the window's own storage.
 
 It never logs in anywhere, never uses your saved credentials, and never sends data anywhere. Its one network call goes to your own Ollama server at `127.0.0.1`, to list the loaded models.
 
