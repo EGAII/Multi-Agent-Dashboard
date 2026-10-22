@@ -119,6 +119,25 @@ class Api:
             w.move(w.x, int(min(max(top, t + MARGIN), b - MARGIN - target)))
         return target
 
+    def set_width(self, content_w):
+        """Make the page area this wide (single-column mode is narrow). A window on the right half of the
+        screen keeps its right edge, so it stays docked where it was. Does nothing while maximized."""
+        if self._restore is not None:
+            return None
+        w = self._window
+        try:
+            native = w.native
+            chrome = (native.Size.Width - native.ClientSize.Width) / (getattr(native, "_scale", 1) or 1)
+        except Exception:
+            chrome = 0
+        target = int(content_w + chrome)
+        if abs(target - w.width) < 3:
+            return w.width
+        l, t, r, b = self._area()
+        right = w.x + w.width / 2 > (l + r) / 2
+        w.resize(target, w.height, fix_point=(FixPoint.EAST if right else FixPoint.WEST) | FixPoint.NORTH)
+        return target
+
     def toggle_maximize(self):
         """Fill the monitor's work area (not over the taskbar), or go back to the panel size and place."""
         w = self._window

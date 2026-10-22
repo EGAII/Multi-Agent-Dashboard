@@ -180,6 +180,7 @@ main { flex: 1; overflow-y: auto; padding: 0 16px 16px; scrollbar-width: thin; s
 .bar.warn i { background: var(--warn); }
 .bar.crit i { background: var(--crit); }
 .note { min-height: 17px; color: var(--ink-3); font-size: 11.5px; }
+.note:empty { display: none; }
 .meta { margin-top: auto; padding-top: 9px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .meta b { color: var(--ink-2); font-weight: 500; }
 
@@ -275,6 +276,33 @@ main { flex: 1; overflow-y: auto; padding: 0 16px 16px; scrollbar-width: thin; s
 .toast span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .toast.bad .icon { color: #dc2626; }
+
+/* ------------------------------------------------------------------ single column: the narrow, compact panel */
+body.compact .titlebar { padding: 0 6px 0 14px; gap: 2px; }
+body.compact .iconbtn { width: 28px; height: 28px; }
+body.compact .sep { margin: 0 2px; }
+body.compact .toolbar { gap: 10px; padding: 0 12px 10px; }
+body.compact .layout { order: 1; }                       /* stays on the row with Usage / Agents */
+body.compact .updated { display: none; }                 /* the dot by the name still shows it is live */
+body.compact .totals { order: 2; flex: 1 0 100%; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 7px 2px; }
+body.compact .totals > * { padding: 0 10px; }
+body.compact .totals b { font-size: 15px; }
+body.compact main { padding: 0 12px 12px; }
+body.compact .banner { margin: 0 12px 10px; }
+body.compact .cards, body.compact .types { gap: 8px; }
+body.compact .card { padding: 12px 14px; gap: 10px; }
+body.compact .bars { gap: 8px; }
+/* each window on one line: label, tokens, bar, percentage */
+body.compact .brow { grid-template-columns: 38px 46px minmax(0, 1fr) 82px; align-items: center; column-gap: 8px; }
+body.compact .btop { display: contents; }
+body.compact .btop .k { min-width: 0; }
+body.compact .bar { order: 2; height: 7px; }
+body.compact .btop .pct { order: 3; margin-left: 0; font-size: 12px; text-align: right; }
+body.compact .type { padding: 9px 12px; row-gap: 2px; }
+body.compact .type .total { font-size: 17px; }
+body.compact .detail { margin-top: 8px; --row-h: 50px; }
+body.compact .agent { grid-template-columns: 30px minmax(0, 1fr) auto 14px; gap: 9px; padding: 0 10px; }
+body.compact .mark { width: 30px; height: 30px; font-size: 11px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0ms !important; animation: none !important; }

@@ -26,7 +26,7 @@ These screenshots use the built-in demo data (`--demo`), so the names are made u
    - On the first run it installs `psutil` and `pywebview`.
    - The window is drawn by Microsoft Edge WebView2, which comes with Windows 11.
 
-The window opens in the bottom-right corner and stays on top of other windows. Its width is fixed. Its height follows what is shown, and in the lower half of the screen it grows upwards, so it stays clear of the taskbar.
+The window opens in the bottom-right corner and stays on top of other windows. Its width is fixed: 780px, or about 400px in single-column mode. Its height follows what is shown, and in the lower half of the screen it grows upwards, so it stays clear of the taskbar.
 
 In the title bar:
 - the moon or sun icon switches between light and dark (it follows Windows until you choose);
@@ -35,6 +35,15 @@ In the title bar:
 - minimise, maximise and close. Maximise fills the screen the window is on, above the taskbar, and the cards spread into one row. Click it again, or double-click the title bar, to go back.
 
 Under the title bar, the three small buttons on the right set the columns: 3, 2 or 1. Each page keeps its own choice, and on the Agents page it applies to both the tiles and the agent list.
+
+One column is the compact mode:
+- the window narrows to about 400px, keeping its right edge where it was;
+- today's totals move to their own row under the Usage / Agents switch;
+- each usage bar fits on one line, and the agent rows are shorter.
+
+Text keeps its normal size. Switching back to 2 or 3 columns widens the window again.
+
+![Single-column compact mode](docs/compact-usage.png)
 
 Press **Ctrl+1** for the Usage page and **Ctrl+2** for the Agents page. Drag the bare title bar to move the window.
 

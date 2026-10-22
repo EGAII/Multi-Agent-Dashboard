@@ -2,7 +2,8 @@
 // AgentBoard page. Pulls a JSON snapshot from Python (window.pywebview.api) and patches the DOM in place,
 // keyed by agent type and agent process, so bars animate between values instead of redrawing.
 // The window keeps its width; its height follows the content, so opening an agent type's details makes it taller.
-// Each page has its own column count (3, 2 or 1), set with the small buttons in the toolbar.
+// Each page has its own column count (3, 2 or 1), set with the small buttons in the toolbar; one column also
+// narrows the window and tightens the spacing.
 (() => {
   const $ = (id) => document.getElementById(id);
   const ICON = (name) => (window.ICONS && window.ICONS[name]) || "";
@@ -283,11 +284,23 @@
   }
   function contentHeight() {
     const page = $(`page-${S.page}`), banner = $("banner");
+    const bottom = parseFloat(getComputedStyle($("main")).paddingBottom) || 0;
     return Math.ceil($("titlebar").offsetHeight + $("toolbar").offsetHeight + (banner.hidden ? 0 : banner.offsetHeight + 12) +
-                     page.offsetHeight + 18);
+                     page.offsetHeight + bottom + 2);
   }
+  // page width: the landscape panel, or a narrow one in single-column mode
+  const WIDE = 764, NARROW = 384;
+  const nextResize = () => new Promise((done) => {
+    const t = setTimeout(done, 400);
+    window.addEventListener("resize", () => { clearTimeout(t); requestAnimationFrame(() => requestAnimationFrame(done)); }, { once: true });
+  });
   async function fit(again = true) {
     if (!S.api || S.maximized) return;
+    const wantW = S.cols[S.page] === 1 ? NARROW : WIDE;
+    if (Math.abs(window.innerWidth - wantW) > 2) {  // width first, so the height is measured at the final width
+      try { await S.api.set_width(wantW); } catch (e) { /* keep the current width */ }
+      await nextResize();
+    }
     try { await S.api.fit(contentHeight(), window.innerHeight); } catch (e) { return; /* keep the current size */ }
     // check once more after the window has settled, in case the layout moved meanwhile
     if (again) setTimeout(() => { if (Math.abs(window.innerHeight - contentHeight()) > 3) fit(false); }, 250);
@@ -373,6 +386,7 @@
       $(`page-${p}`).dataset.cols = S.cols[p];
     }
     document.querySelectorAll("#layout .lbtn").forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.cols) === S.cols[S.page])));
+    document.body.classList.toggle("compact", S.cols[S.page] === 1);  // single column: the narrow, compact panel
   }
   function setCols(n, page = S.page) {
     S.cols[page] = n; store.set(`ab.cols.${page}`, n);
