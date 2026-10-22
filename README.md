@@ -3,7 +3,7 @@
 A compact, landscape, always-on-top Windows panel for all your coding agents.
 
 - **Three pages, in this order: Agents, Usage and Overview.** Switching pages never moves or resizes the window, and the new page slides and fades in.
-- **Agents page**: a tile for **All agents** and one for each agent type. Click a tile to show its agents below in a five-row scrolling list; the window grows if it needs the room. Each agent shows its status and where it runs: Claude Code CLI in Windows Terminal, the Claude desktop app, Codex CLI, Codex in a VS Code terminal, and so on.
+- **Agents page**: a tile for **All agents** and one for each agent type. Click a tile to show its agents in a list that fits them, up to five rows (more scroll), which in 1 column folds out right under the tile, like a category list; the window grows if it needs the room. Each agent shows its status and where it runs: Claude Code CLI in Windows Terminal, the Claude desktop app, Codex CLI, Codex in a VS Code terminal, and so on.
 - **Usage page**: a monitor (card) per agent type, with a bar for each limit window: the 5-hour window, the last 7 days and, for Claude, Fable's own weekly window. Each bar shows tokens used as a % of the quota. The small **+** adds a monitor for any agent type, and **× Remove** hides one.
 - **Overview page**: each model's share of your tokens over 7 or 30 days, and a calendar of tokens per day, a month at a time with arrows to go back, where each day's circle shows how much you used and how it split between agents.
 - **Columns**: small buttons in the toolbar lay out every page in 1, 2 or 3 columns. It is one setting for all pages.
@@ -172,7 +172,7 @@ The agent colours were checked with a colour-vision validator in light and dark 
 
 The page starts with tiles only: one for **All agents** and one for each agent type. Each tile shows its agent count, and how many need approval (red), are waiting for you (amber) and are working (green).
 
-Click a tile to list its agents below the tiles, and the window grows to fit the list. The list is always five rows tall, with 1, 2 or 3 agents per row depending on the column setting; any more scroll inside it. Click the tile again to hide the list, and the window shrinks back. Only one tile is open at a time. Each agent shows:
+Click a tile to list its agents, and the window grows to fit the list. In 2 or 3 columns the list sits below the tiles. In 1 column it folds out right under the tile you clicked, slightly indented, between that type and the next one; it moves along when you drag that tile. The list fits its sessions, up to five rows, with 1, 2 or 3 agents per row depending on the column setting; any more scroll inside it. Click the tile again to hide the list, and the window shrinks back. Only one tile is open at a time. Each agent shows:
 - the session title;
 - a status dot:
   - red: it stopped on a tool call, probably waiting for approval;

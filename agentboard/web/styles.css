@@ -354,11 +354,15 @@ body.still .page[data-pos], body.still .segmented * { transition: none !importan
 
 .detail { margin-top: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
 .detail[hidden] { display: none; }
-/* the agent list is always exactly five rows tall; more agents scroll inside it */
+/* one column: the open type's agents fold out under its tile, between it and the next type */
+.types > .detail { margin: 0 0 0 12px; animation: fold-open 220ms var(--ease); transform-origin: top; }  /* indented: it belongs to the tile above */
+@keyframes fold-open { from { opacity: 0; transform: translateY(-6px) scaleY(0.96); } to { opacity: 1; transform: none; } }
+/* the agent list fits its sessions, up to five rows; more scroll inside it. The last row's bottom line tucks
+   under the panel's border, so a short list doesn't end in a double line */
 .detail { --row-h: 48px; }
 .detail-grid {
   display: grid; grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); grid-auto-rows: var(--row-h); align-content: start;
-  height: calc(5 * var(--row-h)); overflow-y: auto; overscroll-behavior: contain; margin-right: -1px;
+  max-height: calc(5 * var(--row-h)); overflow-y: auto; overscroll-behavior: contain; margin: 0 -1px -1px 0;
   scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent;
 }
 

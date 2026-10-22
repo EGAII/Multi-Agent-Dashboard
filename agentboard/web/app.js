@@ -489,10 +489,11 @@
     S.tileOrder = [...now, ...S.tileOrder.filter((id) => !now.includes(id))];
     store.set("ab.tileOrder", JSON.stringify(S.tileOrder));
   }
-  const enableTileDrag = (b) => makeSortable(b, { selector: ".type", done: saveTileOrder });
+  const enableTileDrag = (b) => makeSortable(b, { selector: ".type", done: saveTileOrder, moved: placeDetail });
 
-  // Make an item draggable among its siblings. canSwap(other) limits where it may go; done() saves the new order.
-  function makeSortable(item, { selector, canSwap = () => true, done }) {
+  // Make an item draggable among its siblings. canSwap(other) limits where it may go; done() saves the new order;
+  // moved() runs right after each move (siblings that are not items, like a folded-out list, can follow along).
+  function makeSortable(item, { selector, canSwap = () => true, done, moved = () => {} }) {
     item.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;
       const box = item.parentNode, x0 = e.clientX, y0 = e.clientY;
@@ -519,7 +520,7 @@
           px >= el.offsetLeft && px < el.offsetLeft + el.offsetWidth && py >= el.offsetTop && py < el.offsetTop + el.offsetHeight);
         if (!target || !canSwap(target)) return;
         const kids = [...box.children];
-        slide(box, () => box.insertBefore(item, kids.indexOf(target) > kids.indexOf(item) ? target.nextSibling : target));
+        slide(box, () => { box.insertBefore(item, kids.indexOf(target) > kids.indexOf(item) ? target.nextSibling : target); moved(); });
       };
       const up = () => {
         window.removeEventListener("pointermove", move);
@@ -541,9 +542,10 @@
       if (!e.altKey || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return;
       e.preventDefault();
       const box = item.parentNode, back = e.key === "ArrowLeft" || e.key === "ArrowUp";
-      const sib = back ? item.previousElementSibling : item.nextElementSibling;
+      let sib = back ? item.previousElementSibling : item.nextElementSibling;
+      while (sib && !sib.matches(selector)) sib = back ? sib.previousElementSibling : sib.nextElementSibling;
       if (!sib || !canSwap(sib)) return;
-      slide(box, () => box.insertBefore(item, back ? sib : sib.nextSibling));
+      slide(box, () => { box.insertBefore(item, back ? sib : sib.nextSibling); moved(); });
       done(item);
       item.focus();
     });
@@ -617,12 +619,25 @@
     b.setAttribute("aria-label", `${a.name}, ${STATUS_TEXT[a.status] || a.status}, ${a.surface}. Open it`);
   }
 
+  // Where the open type's agents go: in one column they fold out right under its tile, like a category list, so
+  // they sit between it and the next type; in 2 or 3 columns, in their own block under all the tiles.
+  const folds = () => S.cols === 1;
+  function placeDetail() {
+    const detail = $("detail"), tile = S.open && tiles.get(S.open);
+    if (folds() && tile && !detail.hidden) {
+      if (tile.nextElementSibling !== detail) tile.after(detail);
+    } else if (detail.previousElementSibling !== $("pinned")) {
+      $("pinned").after(detail);  // its own place under the tiles and the pinned list
+    }
+  }
+
   function renderAgents(snap) {
     const all = snap.agents || [];
     const box = $("types"), detail = $("detail");
     if (!all.length) {
       tiles.clear(); rows.clear(); pinRows.clear(); S.open = null;
       detail.hidden = true; detail.innerHTML = "";
+      placeDetail();  // out of the tile box before it is emptied
       $("pinned").hidden = true;
       box.innerHTML = emptyHtml("terminal-window", "No agents running",
         "Start Claude Code, Codex, Gemini CLI, Ollama or any agent in your settings. It shows up here within a few seconds.");
@@ -644,8 +659,10 @@
     list.length = 0;
     list.push(...ranked);
 
-    const seen = new Set();
-    list.forEach((f, i) => {
+    const open = list.find((f) => f.id === S.open);
+    detail.hidden = !open;
+    const seen = new Set(), seq = [];
+    list.forEach((f) => {
       let b = tiles.get(f.id);
       if (!b) { b = makeTile(f.id); tiles.set(f.id, b); }
       b.setAttribute("aria-pressed", String(S.open === f.id));
@@ -658,10 +675,14 @@
         return n ? `<span class="cnt s-${s}">${n} ${label}</span>` : "";
       }).join("");
       b.querySelector(".counts").innerHTML = counts || `<span class="cnt none">all idle</span>`;
-      if (S.dragging) { if (!b.parentNode) box.appendChild(b); }  // leave the order alone mid-drag
-      else if (box.children[i] !== b) box.insertBefore(b, box.children[i] || null);
+      seq.push(b);
+      if (open === f && folds()) seq.push(detail);  // folded out under its tile
       seen.add(f.id);
     });
+    if (!folds() && detail.parentNode === box) placeDetail();
+    // only what is out of place moves, so the open list keeps its scroll position across refreshes
+    if (S.dragging) seq.forEach((b) => { if (!b.parentNode) box.appendChild(b); });  // leave the order alone mid-drag
+    else seq.forEach((b, i) => { if (box.children[i] !== b) box.insertBefore(b, box.children[i] || null); });
     for (const [id, b] of tiles) if (!seen.has(id)) { b.remove(); tiles.delete(id); }
 
     // pinned sessions: always listed under the tiles, whichever type is open
@@ -669,9 +690,7 @@
     $("pinned").hidden = !pinned.length;
     syncRows($("pinned-grid"), pinned, pinRows);
 
-    const open = list.find((f) => f.id === S.open);
-    detail.hidden = !open;
-    if (!open) { detail.innerHTML = ""; rows.clear(); return; }
+    if (!open) { detail.innerHTML = ""; rows.clear(); placeDetail(); return; }
     let grid = detail.querySelector(".detail-grid");
     if (!grid) { grid = document.createElement("div"); grid.className = "detail-grid"; detail.appendChild(grid); }
     syncRows(grid, ordered(open.agents), rows);
@@ -1055,6 +1074,7 @@
   function setCols(n) {
     S.cols = n; store.set("ab.cols", n);
     syncCols();
+    if (S.snap) renderAgents(S.snap);  // the open list folds under its tile in one column
     checkLayout();
   }
 
