@@ -2,6 +2,8 @@
 import threading
 import time
 
+from . import plans, usage
+
 TYPES = [
     # id, name, colour, local, running, working, waiting, today, cache, requests, quota kind,
     # (5h tokens, 5h %, 5h basis, minutes to reset), (7d tokens, 7d %, 7d basis, minutes to reset)
@@ -64,18 +66,25 @@ class DemoEngine:
         for tid, name, color, local, running, working, waiting, today, cache, reqs, kind, w5, w7 in TYPES:
             windows = []
             for key, label, (tokens, pct, basis, mins) in [("5h", "5h", w5), ("7d", "7d", w7)] + MODEL_WINDOWS.get(tid, []):
-                windows.append({"key": key, "label": label, "tokens": int(tokens * grow), "pct": min(100, pct * grow),
-                                "basis": basis, "end": now + mins * 60 if mins else None, "ref": int(tokens * 100 / pct)})
+                tokens = int(tokens * grow)
+                windows.append({"key": key, "label": label, "tokens": tokens, "pct": min(100, pct * grow),
+                                "basis": basis, "end": now + mins * 60 if mins else None, "ref": int(tokens * 100 / pct),
+                                "requests": tokens // 5200, "prompts": tokens // 40000})
+            daily = {"tokens": int(today * grow), "requests": reqs or int(today * grow) // 5200,
+                     "prompts": int(today * grow) // 40000, "end": usage.pt_midnight(now, 1)}
             types.append({"id": tid, "name": name, "color": color, "local": local, "running": running, "working": working,
                           "waiting": waiting, "today": int(today * grow), "today_cache": cache, "requests_today": reqs,
                           "week": w7[0], "models": [], "windows": windows, "loaded": ["qwen3:8b"] if local else None,
-                          "quota_kind": kind, "requests": {"used": reqs, "limit": 1000} if reqs else None, "visible": True})
+                          "quota_kind": kind, "requests": {"used": reqs, "limit": 1000} if reqs else None, "visible": True,
+                          "daily": daily, "plans": plans.for_type(tid)})
         for tid, name, color in IDLE_TYPES:
             types.append({"id": tid, "name": name, "color": color, "local": False, "running": 0, "working": 0, "waiting": 0,
                           "today": 0, "today_cache": 0, "requests_today": 0, "week": 0, "models": [], "loaded": None,
-                          "windows": [{"key": k, "label": k, "tokens": 0, "pct": None, "basis": None, "end": None, "ref": None}
-                                      for k in ("5h", "7d")],
-                          "quota_kind": "none", "requests": None, "visible": False})
+                          "windows": [{"key": k, "label": k, "tokens": 0, "pct": None, "basis": None, "end": None, "ref": None,
+                                       "requests": 0, "prompts": 0} for k in ("5h", "7d")],
+                          "quota_kind": "none", "requests": None, "visible": False,
+                          "daily": {"tokens": 0, "requests": 0, "prompts": 0, "end": usage.pt_midnight(now, 1)},
+                          "plans": plans.for_type(tid)})
         colors = {t[0]: (t[1], t[2]) for t in TYPES}
         agents = []
         for i, (tid, name, status, since, skind, surface, tokens, model) in enumerate(AGENTS):

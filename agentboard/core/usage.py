@@ -58,9 +58,13 @@ class FileState:
     model: str = ""
     tokens_used: int = 0   # total reported by the agent's own database, when it has one
     imported_before: float = 0.0  # history copied in from another agent before this time is not this agent's usage
+    prompts: list = field(default_factory=list)  # times of the prompts you typed (plans often count these)
 
     def own_events(self):
         return [e for e in self.events if e.ts > self.imported_before] if self.imported_before else self.events
+
+    def own_prompts(self):
+        return [t for t in self.prompts if t > self.imported_before] if self.imported_before else self.prompts
 
 
 # ---------------------------------------------------------------- readers (one JSON object at a time)
@@ -93,6 +97,10 @@ def read_claude(st, o):
         c = (o.get("message") or {}).get("content")
         is_tool = isinstance(c, list) and any(isinstance(x, dict) and x.get("type") == "tool_result" for x in c)
         st.last_kind = ("tool_result",) if is_tool else ("user",)
+        key = ("prompt", o.get("uuid"))
+        if not is_tool and not o.get("isMeta") and key not in st.seen:  # a prompt you typed, not a tool result
+            st.seen.add(key)
+            st.prompts.append(ts)
     else:
         return
     st.first_ts = st.first_ts or ts
@@ -122,6 +130,7 @@ def read_codex(st, o):
         st.last_kind = ("done",)
     elif pt == "user_message":
         st.last_kind = ("working",)
+        st.prompts.append(ts)
     elif pt in ("turn_aborted", "error"):
         st.last_kind = ("done",)
     else:
@@ -154,6 +163,9 @@ def read_gemini(st, o):
             fresh = max(0, _num(tk, "input") - _num(tk, "cached")) + _num(tk, "output", "thoughts")
             st.events.append(Event(ts, fresh, _num(tk, "cached"), _num(tk, "output"), o.get("model") or ""))
         st.model = o.get("model") or st.model
+    elif t == "user" and ("prompt", o.get("id") or ts) not in st.seen:
+        st.seen.add(("prompt", o.get("id") or ts))
+        st.prompts.append(ts)
     st.last_kind = ("assistant", "end_turn") if t == "gemini" else ("user",)
     st.first_ts = st.first_ts or ts
     st.last_ts = max(st.last_ts, ts)
@@ -172,6 +184,7 @@ def read_opencode(st, o):
         st.last_kind = ("assistant", "end_turn" if (o.get("time") or {}).get("completed") else "tool_use")
     elif o.get("role") == "user":
         st.last_kind = ("user",)
+        st.prompts.append(ts)
     st.first_ts = st.first_ts or ts
     st.last_ts = max(st.last_ts, ts)
 
@@ -342,6 +355,24 @@ def week_peak(events, now, days):
     return max(cum[bisect.bisect_left(ts, end)] - cum[bisect.bisect_left(ts, end - 7 * 86400)] for end in ends)
 
 
+def _counts(events, prompts, start):
+    """What a window holds from `start` on: tokens, API requests (one per reply) and the prompts you typed."""
+    ev = [e for e in events if e.ts >= start]
+    return {"tokens": sum(e.fresh for e in ev), "requests": len(ev),
+            "prompts": None if prompts is None else sum(1 for t in prompts if t >= start)}
+
+
+def pt_midnight(now, days_ahead):
+    """Last (0) or next (1) midnight in US Pacific time, where Google resets its daily quotas."""
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("America/Los_Angeles")
+    except Exception:  # no time-zone data: Pacific daylight time is close enough
+        tz = dt.timezone(dt.timedelta(hours=-7))
+    d = dt.datetime.fromtimestamp(now, tz).date() + dt.timedelta(days=days_ahead)
+    return dt.datetime.combine(d, dt.time(), tz).timestamp()
+
+
 def _with_basis(w, official, limit, peak):
     """Fill in a window's percentage and where it comes from: official > your limit > your busiest window."""
     w.update(basis=None, pct=None, ref=None)
@@ -470,6 +501,7 @@ class UsageModel:
         for a in self.cfg["agents"]:
             files = self.by_type.get(a["id"], [])
             ev = [e for f in files for e in f.own_events()]
+            prompts = [t for f in files for t in f.own_prompts()]
             running = [x for x in agents if x.type_id == a["id"]]
             today = [e for e in ev if e.ts >= today0]
             week = [e for e in ev if e.ts >= now - 7 * 86400]
@@ -483,7 +515,9 @@ class UsageModel:
                  "requests_today": len(today), "week": sum(e.fresh for e in week),
                  "block": blk_tokens, "block_end": blk_end, "block_hours": block_hours, "block_peak": blk_peak,
                  "models": sorted({e.model for e in today if e.model and not e.model.startswith("<")})[:3], "quota": self._quota(a, files, ev, blk_tokens, blk_end, today),
-                 "windows": self._windows(a, files, ev, now)}
+                 "windows": self._windows(a, files, ev, prompts, now),
+                 # daily quotas (Gemini CLI, for one) reset at midnight Pacific time
+                 "daily": {"end": pt_midnight(now, 1), **_counts(ev, prompts, pt_midnight(now, 0))}}
             if a["id"] == "ollama":
                 s["loaded"] = ollama_models()
             s["visible"] = bool(s["running"] or s["today"] or s["week"] or s.get("loaded"))
@@ -503,7 +537,7 @@ class UsageModel:
             return official_windows(read_statusline_limits(), time.time())
         return []
 
-    def _windows(self, a, files, ev, now):
+    def _windows(self, a, files, ev, prompts, now):
         """Tokens used in the 5-hour and 7-day windows, plus any per-model weekly windows the agent type defines
         ("model_windows", e.g. Fable for Claude). Each gets a percentage: the provider's own figure when one is
         reported, else against your own limit from the settings, else against your busiest such window."""
@@ -521,22 +555,24 @@ class UsageModel:
         out = []
         for key, hours in (("5h", 5), ("7d", 168)):
             o = official.get(key)
-            if o and o.get("reset"):  # count tokens over the provider's own window
-                tokens, end = sum(e.fresh for e in ev if e.ts >= o["reset"] - hours * 3600), o["reset"]
+            if o and o.get("reset"):  # count over the provider's own window
+                start, end = o["reset"] - hours * 3600, o["reset"]
             elif key == "5h":
-                tokens, end, _ = five_hour_block(ev, now)
+                _, end, _ = five_hour_block(ev, now)
+                start = end - hours * 3600 if end else now  # no active block: nothing in it yet
             else:
-                tokens, end = sum(e.fresh for e in ev if e.ts >= now - 7 * 86400), None
+                start, end = now - 7 * 86400, None
             limit = fb.get("limit_tokens" if key == "5h" else "limit_tokens_7d")
             peak = lambda k=key: five_hour_block(ev, now)[2] if k == "5h" else week_peak(ev, now, days)  # noqa: E731
-            out.append(_with_basis({"key": key, "label": key, "tokens": tokens, "end": end}, o, limit, peak))
+            out.append(_with_basis({"key": key, "label": key, "end": end, **_counts(ev, prompts, start)}, o, limit, peak))
         for mw in a.get("model_windows", []):
             pat = mw["match"].lower()
             mev = [e for e in ev if pat in (e.model or "").lower()]
             o = next((w for w in scoped if pat in w["label"].lower()), None)
             start = o["reset"] - 7 * 86400 if o and o.get("reset") else now - 7 * 86400
-            w = {"key": mw["key"], "label": mw.get("label", mw["key"]), "tokens": sum(e.fresh for e in mev if e.ts >= start),
-                 "end": o.get("reset") if o else None}
+            # prompts are not tied to a model, so a model's window counts its tokens and requests only
+            w = {"key": mw["key"], "label": mw.get("label", mw["key"]), "end": o.get("reset") if o else None,
+                 **_counts(mev, None, start)}
             out.append(_with_basis(w, o, fb.get(f"limit_tokens_{mw['key']}"), lambda: week_peak(mev, now, days)))
         return out
 

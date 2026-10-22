@@ -46,7 +46,7 @@
   // ------------------------------------------------------------------ usage page: a monitor (card) per agent type,
   // with a bar per window (5h, 7d, Fable, ...). Agent types in use show by default; you can add others and remove any.
   const cards = new Map();
-  const WIN_NAME = { "5h": "5-hour", "7d": "7-day" };
+  const WIN_NAME = { "5h": "5-hour", "7d": "7-day", "1d": "Today" };
   // hidden: monitors you removed; added: monitors you added. Kept in this window's storage.
   const MON = (() => {
     try {
@@ -93,10 +93,171 @@
       <div class="bars"></div>
       <div class="note"></div>
       <div class="foot"><div class="meta"></div>
+        <button class="plan-chip" aria-haspopup="dialog" aria-expanded="false"><span class="plan-name">Auto</span><span class="icon" data-icon="caret-right"></span></button>
         <button class="remove"><span class="icon" data-icon="x"></span>Remove</button></div>`;
     el.querySelector(".remove").addEventListener("click", () => removeMonitor(id));
+    el.querySelector(".plan-chip").addEventListener("click", (e) => {
+      if (S.planFor === id) closePlan(); else openPlan(id, e.currentTarget);
+    });
     paintIcons(el);
     return el;
+  }
+
+  // ------------------------------------------------------------------ plans: an estimated % where the agent reports none
+  // Pick a plan per monitor: its published limits, your own (Custom), or Auto, which uses limits learned from the
+  // official readings you have had (tokens at 100%). The provider's own % always wins when it is reported.
+  const loadObj = (k) => {
+    try { const v = JSON.parse(store.get(k, "{}")); return v && typeof v === "object" && !Array.isArray(v) ? v : {}; } catch (e) { return {}; }
+  };
+  const PLAN = loadObj("ab.plans");     // type id -> {choice: "auto" | plan id | "custom", custom: {5h|7d|1d: {unit, value}}}
+  const LEARN = loadObj("ab.learned");  // "type:window" -> [{v: tokens at 100%, at: time}]
+  const UNIT = { tokens: "tokens", requests: "requests", prompts: "messages" };
+  const savePlans = () => store.set("ab.plans", JSON.stringify(PLAN));
+  const presetsOf = (t) => (t.plans && t.plans.plans) || [];
+  const planOf = (t) => PLAN[t.id] || { choice: "auto" };
+
+  function learn(t) {  // each time a window has an official %, remember what 100% came to in tokens
+    let changed = false;
+    for (const w of t.windows || []) {
+      if (w.basis !== "official" || !(w.pct >= 5) || !w.tokens) continue;
+      const k = `${t.id}:${w.key}`, list = LEARN[k] || (LEARN[k] = []), full = Math.round(w.tokens * 100 / w.pct);
+      const last = list[list.length - 1];
+      if (last && Math.abs(last.v - full) / full < 0.03 && Date.now() - last.at < 15 * 60e3) continue;  // nothing new
+      list.push({ v: full, at: Date.now() });
+      if (list.length > 12) list.shift();
+      changed = true;
+    }
+    if (changed) store.set("ab.learned", JSON.stringify(LEARN));
+  }
+  function learned(id, key) {  // the middle of the recent readings, so one odd reading does not swing it
+    const v = (LEARN[`${id}:${key}`] || []).map((x) => x.v).sort((a, b) => a - b);
+    return v.length ? v[Math.floor(v.length / 2)] : null;
+  }
+  function planLabel(t) {
+    const p = planOf(t);
+    if (p.choice === "custom") return "Custom";
+    const preset = presetsOf(t).find((x) => x.id === p.choice);
+    return preset ? preset.short || preset.label : "Auto";
+  }
+  function limitFor(t, key) {  // your custom limit, else the chosen plan's, else one learned from official readings
+    const p = planOf(t);
+    if (p.choice === "custom") {
+      const c = p.custom && p.custom[key];
+      if (c && c.value > 0) return { ...c, src: "custom" };
+    } else if (p.choice !== "auto") {
+      const preset = presetsOf(t).find((x) => x.id === p.choice);
+      const l = preset && preset.limits[key];
+      if (l) return { ...l, src: "plan", plan: preset.label };
+    }
+    const v = key === "1d" ? null : learned(t.id, key);
+    return v ? { unit: "tokens", value: v, src: "learned" } : null;
+  }
+  function estimate(t, w) {  // the window with an estimated % (basis "est"), or as it was when there is nothing to go on
+    if (w.basis === "official") return w;
+    const lim = limitFor(t, w.key);
+    if (!lim) return w;
+    if (lim.none) return { ...w, basis: "nolimit", pct: null, lim };
+    const count = lim.unit === "tokens" ? w.tokens : lim.unit === "requests" ? w.requests : w.prompts;
+    if (count == null) return w;
+    if (lim.range) {  // a published range: the bar runs to the top of it, amber from the bottom of it
+      const [lo, hi] = lim.range;
+      return { ...w, basis: "est", count, lim, pct: 100 * count / hi, lvl: count >= hi ? "crit" : count >= lo ? "warn" : "" };
+    }
+    const p = 100 * count / lim.value;
+    return { ...w, basis: "est", count, lim, pct: p, lvl: level(p) };
+  }
+  function windowsOf(t) {  // what the card shows: 5h, 7d, model windows, and Today when the plan has a daily limit
+    const out = (t.windows || []).map((w) => estimate(t, w));
+    if (t.daily && limitFor(t, "1d")) out.push(estimate(t, { key: "1d", label: "Today", basis: null, pct: null, ...t.daily }));
+    return out;
+  }
+
+  // the floating plan panel, anchored to a monitor's plan chip
+  const parseAmount = (s) => {  // "3M", "500k", "1,500" -> number
+    const m = String(s).trim().replace(/,/g, "").match(/^(\d+(?:\.\d+)?)\s*([kKmMbB]?)$/);
+    if (!m) return 0;
+    return Math.round(Number(m[1]) * ({ k: 1e3, m: 1e6, b: 1e9 }[m[2].toLowerCase()] || 1));
+  };
+  function openPlan(id, chip) {
+    S.planFor = id;
+    S.planChip = chip;
+    renderPlan();
+    $("plan-panel").hidden = false;
+    placePlan();
+    checkLayout();
+  }
+  function closePlan() {
+    if (!S.planFor) return;
+    S.planFor = null;
+    $("plan-panel").hidden = true;
+    document.querySelectorAll(".plan-chip[aria-expanded='true']").forEach((c) => c.setAttribute("aria-expanded", "false"));
+    checkLayout();
+  }
+  function placePlan() {
+    const pop = $("plan-panel"), chip = S.planChip;
+    if (!chip || !chip.isConnected) return closePlan();
+    chip.setAttribute("aria-expanded", "true");
+    const r = chip.getBoundingClientRect(), h = pop.scrollHeight;
+    pop.style.left = `${Math.max(8, Math.min(r.right - pop.offsetWidth, window.innerWidth - pop.offsetWidth - 8))}px`;
+    // open downwards when it fits, else upwards when that fits, so the window rarely has to grow
+    const below = r.bottom + 6 + h <= window.innerHeight - 8, above = r.top - 6 - h >= 8;
+    pop.style.top = `${below || !above ? r.bottom + 6 : r.top - 6 - h}px`;
+  }
+  function renderPlan() {
+    const t = S.snap && (S.snap.types || []).find((x) => x.id === S.planFor);
+    if (!t) return;
+    const p = planOf(t), info = t.plans || { plans: [], note: "", as_of: "" };
+    $("plan-title").textContent = `${t.name} plan`;
+    const learnedText = ["5h", "7d"].map((k) => [k, learned(t.id, k)]).filter(([, v]) => v).map(([k, v]) => `${k} ≈ ${fmt(v)} tokens`);
+    const options = [
+      { id: "auto", label: "Auto", desc: learnedText.length ? `Learned: ${learnedText.join(", ")}` : "Official when reported, else learned from official readings" },
+      ...presetsOf(t),
+      { id: "custom", label: "Custom", desc: "Your own limits" },
+    ];
+    const list = $("plan-list");
+    list.innerHTML = "";
+    for (const o of options) {
+      const b = document.createElement("button");
+      b.className = "plan-opt"; b.setAttribute("role", "radio"); b.setAttribute("aria-checked", String(p.choice === o.id));
+      b.innerHTML = `<i class="radio"></i><span><b></b><em></em></span>`;
+      b.querySelector("b").textContent = o.label;
+      b.querySelector("em").textContent = o.desc || "";
+      b.addEventListener("click", () => {
+        PLAN[t.id] = { ...(PLAN[t.id] || {}), choice: o.id };
+        savePlans();
+        renderPlan();
+        if (S.snap) renderUsage(S.snap);
+        placePlan();
+        checkLayout();
+        if (o.id === "custom") { const f = $("plan-custom").querySelector("input"); if (f) f.focus(); }
+      });
+      list.appendChild(b);
+    }
+    const form = $("plan-custom");
+    form.hidden = p.choice !== "custom";
+    if (!form.hidden) {
+      const c = (PLAN[t.id] && PLAN[t.id].custom) || {};
+      form.innerHTML = [["5h", "5h"], ["7d", "7d"], ["1d", "Today"]].map(([k, label]) => {
+        const v = c[k] || {}, unit = v.unit || "tokens";
+        return `<label class="plan-row" data-k="${k}"><span>${label}</span>` +
+          `<input inputmode="decimal" placeholder="no limit" value="${v.value ? (unit === "tokens" ? fmt(v.value) : v.value) : ""}">` +
+          `<select>${Object.entries(UNIT).map(([u, name]) => `<option value="${u}"${u === unit ? " selected" : ""}>${name}</option>`).join("")}</select></label>`;
+      }).join("");
+      let timer = 0;
+      const save = () => {
+        const custom = {};
+        form.querySelectorAll(".plan-row").forEach((row) => {
+          const value = parseAmount(row.querySelector("input").value), unit = row.querySelector("select").value;
+          if (value > 0) custom[row.dataset.k] = { unit, value };
+        });
+        PLAN[t.id] = { ...(PLAN[t.id] || {}), choice: "custom", custom };
+        savePlans();
+        if (S.snap) renderUsage(S.snap);
+        checkLayout();
+      };
+      form.querySelectorAll("input, select").forEach((el) => el.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(save, 300); }));
+    }
+    $("plan-note").textContent = [info.note, info.as_of && presetsOf(t).length ? `Plan figures as of ${info.as_of}.` : ""].filter(Boolean).join(" ");
   }
 
   // the small + in the toolbar opens a floating panel, anchored under it, with the agent types that have no monitor yet
@@ -143,6 +304,15 @@
   function describeWin(w, local) {
     const name = WIN_NAME[w.key] || `${w.label || w.key} weekly`, tok = `${fmt(w.tokens)} tokens`;
     const ends = w.end ? `, resets in ${until(w.end)}` : "";
+    if (w.basis === "nolimit") return { text: "no limit", cls: "muted", tip: `${name}: ${tok}; ${w.lim.plan} has no ${name} limit` };
+    if (w.basis === "est") {
+      const L = w.lim, unit = UNIT[L.unit] || L.unit;
+      const used = L.unit === "tokens" ? fmt(w.count) : w.count.toLocaleString("en-US");
+      const of = L.range ? `${L.range[0]}–${L.range[1]}` : L.unit === "tokens" ? fmt(L.value) : Number(L.value).toLocaleString("en-US");
+      const src = L.src === "learned" ? "learned from your official readings" : L.src === "custom" ? "your own limit" : `${L.plan} plan`;
+      return { text: L.range ? `${used} of ${of}` : `${pct(w.pct)} est.`, cls: w.lvl || "",
+               tip: `${name} estimate (${src}): ${used} of ${L.range ? "" : "about "}${of} ${unit}${ends}` };
+    }
     if (w.basis === "official") {
       return { text: `${pct(w.pct)} used`, cls: level(w.pct),
                tip: `${name} limit: ${pct(w.pct)} used (official), ${tok}${ends}` };
@@ -165,7 +335,8 @@
     el.style.setProperty("--c", t.color);
     el.querySelector("h3").textContent = t.name;
     el.querySelector(".run").textContent = t.running ? `${t.running} running` : t.local ? "local" : "not running";
-    const wins = t.windows || [];
+    el.querySelector(".plan-name").textContent = planLabel(t);
+    const wins = windowsOf(t);
     const box = el.querySelector(".bars");
     while (box.children.length < wins.length) box.appendChild(makeBar());
     while (box.children.length > wins.length) box.lastChild.remove();
@@ -176,15 +347,15 @@
       const p = row.querySelector(".pct");
       p.textContent = d.text; p.className = `pct ${d.cls}`;
       const bar = row.querySelector(".bar");
-      bar.className = `bar ${w.basis === "peak" ? "peak" : d.cls === "muted" ? "" : d.cls}`;
+      bar.className = `bar ${w.basis === "peak" ? "peak" : w.basis === "est" ? `est ${d.cls}` : d.cls === "muted" ? "" : d.cls}`;
       bar.firstChild.style.width = `${clamp(w.pct)}%`;
       row.title = d.tip;
     });
     // when the windows reset: the official reset times, or when the current 5-hour block ends
-    const w5 = wins.find((w) => w.key === "5h") || {};
-    const official = wins.filter((w) => w.end && w.basis === "official");
-    el.querySelector(".note").textContent = official.length
-      ? "resets " + official.map((w) => `${w.label || w.key} ${until(w.end)}`).join(" · ")
+    const w5 = wins.find((w) => w.key === "5h") || {}, day = wins.find((w) => w.key === "1d");
+    const resets = wins.filter((w) => w.end && w.basis === "official").map((w) => `${w.label || w.key} ${until(w.end)}`);
+    if (day && day.end) resets.push(`today ${until(day.end)}`);
+    el.querySelector(".note").textContent = resets.length ? "resets " + resets.join(" · ")
       : w5.end ? `5h block ends in ${until(w5.end)}` : "";
     const meta = [`today <b class="mono">${fmt(t.today)}</b>`];
     if (t.today_cache) meta.push(`cache <b class="mono">${fmt(t.today_cache)}</b>`);
@@ -198,6 +369,7 @@
     const box = $("cards");
     const types = snap.types || [];
     if (box.querySelector(".sk-card, .empty")) box.innerHTML = "";
+    types.forEach(learn);
     const shown = shownTypes(types);
     const seen = new Set();
     shown.forEach((t, i) => {
@@ -529,8 +701,10 @@
     document.addEventListener("mousedown", (e) => {
       if (!$("ctx").hidden && !e.target.closest("#ctx")) closeCtx();
       if (S.addOpen && !e.target.closest("#add-panel, #btn-add")) openAdd(false);  // a click elsewhere closes the add panel
+      if (S.planFor && !e.target.closest("#plan-panel, .plan-chip")) closePlan();  // and the plan panel
     });
-    window.addEventListener("resize", () => { if (S.addOpen) placeAddPanel(); });
+    window.addEventListener("resize", () => { if (S.addOpen) placeAddPanel(); if (S.planFor) placePlan(); });
+    $("plan-close").addEventListener("click", closePlan);
     window.addEventListener("blur", closeCtx);
     $("main").addEventListener("scroll", closeCtx, { passive: true });
   }
@@ -559,9 +733,9 @@
     const bottom = parseFloat(getComputedStyle($("main")).paddingBottom) || 0;
     const h = $("titlebar").offsetHeight + $("toolbar").offsetHeight + (banner.hidden ? 0 : banner.offsetHeight + 12) +
               page.offsetHeight + bottom + 2;
-    // a short window grows while the add panel is open, so the whole list fits; it shrinks back when the panel closes
-    const pop = $("add-panel");
-    const popBottom = pop.hidden ? 0 : pop.getBoundingClientRect().top + pop.scrollHeight + 10;
+    // a short window grows while a floating panel (add, plan) is open, so all of it fits; it shrinks back afterwards
+    const popBottom = Math.max(0, ...[$("add-panel"), $("plan-panel")].filter((p) => !p.hidden)
+      .map((p) => p.getBoundingClientRect().top + p.scrollHeight + 10));
     return Math.ceil(Math.max(h, popBottom));
   }
   // page width: the landscape panel, or a narrow one in single-column mode
@@ -583,7 +757,8 @@
   }
   // Refit only when something that changes the height changed, not on every refresh.
   function checkLayout() {
-    const sig = [S.page, S.open, S.cols[S.page], cards.size, S.addOpen, addKey, tiles.size,
+    const sig = [S.page, S.open, S.cols[S.page], cards.size, S.addOpen, addKey, S.planFor, $("plan-custom").hidden,
+                 $("cards").querySelectorAll(".brow").length, tiles.size,
                  $("detail").querySelectorAll(".agent").length, pinRows.size, $("banner").hidden].join("|");
     if (sig !== S.layout) { S.layout = sig; fitSoon(); }
   }
@@ -653,6 +828,7 @@
     }
     $("btn-add").hidden = page !== "usage";  // monitors live on the Usage page
     if (page !== "usage" && S.addOpen) { S.addOpen = false; $("add-panel").hidden = true; }
+    if (page !== "usage") closePlan();
     syncCols();
     checkLayout();
   }
@@ -720,7 +896,15 @@
     const b = document.querySelectorAll("#page-agents .agent")[n];
     if (b) { const r = b.getBoundingClientRect(); openCtx(b, { clientX: r.left + 60, clientY: r.top + 20 }); }
   }
-  window.agentboard = { showPage, setTheme, openFold, toggleMax, setCols, openAdd, addMonitor, removeMonitor, markSession, rightClick };
+  function setPlan(id, choice, custom) {  // for the screenshot script: what choosing in the plan panel does
+    PLAN[id] = { ...(PLAN[id] || {}), choice, ...(custom ? { custom } : {}) };
+    savePlans();
+    if (S.snap) renderUsage(S.snap);
+    checkLayout();
+  }
+  const openPlanFor = (id) => { const c = document.querySelector(`#cards .card[data-id="${id}"] .plan-chip`); if (c) openPlan(id, c); };
+  window.agentboard = { showPage, setTheme, openFold, toggleMax, setCols, openAdd, addMonitor, removeMonitor, markSession, rightClick,
+                        setPlan, openPlanFor, closePlan };
 
   function wire() {
     paintIcons();
@@ -756,6 +940,7 @@
       if (e.ctrlKey && (e.key === "1" || e.key === "2")) showPage(e.key === "1" ? "usage" : "agents");
       if (e.key === "Escape" && !$("ctx").hidden) closeCtx();
       else if (e.key === "Escape" && S.addOpen) openAdd(false);
+      else if (e.key === "Escape" && S.planFor) closePlan();
     });
     if (document.fonts) document.fonts.ready.then(() => { S.layout = ""; checkLayout(); });
     setInterval(tickClock, 1000);

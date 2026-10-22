@@ -41,6 +41,7 @@ def main():
         "tokens": {"input": 800, "output": 100, "reasoning": 20, "cache": {"read": 300, "write": 50}}})
     write(f"{tmp}/codex/rollout-x.jsonl", [
         {"timestamp": ISO(NOW - 100), "type": "session_meta", "payload": {"id": "c1", "cwd": "C:\\proj"}},
+        {"timestamp": ISO(NOW - 95), "type": "event_msg", "payload": {"type": "user_message"}},
         {"timestamp": ISO(NOW - 90), "type": "event_msg", "payload": {"type": "task_started"}},
         {"timestamp": ISO(NOW - 80), "type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {
             "input_tokens": 5000, "cached_input_tokens": 4000, "output_tokens": 600, "total_tokens": 5600}},
@@ -57,6 +58,10 @@ def main():
                      "usage": {"input_tokens": 100, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "output_tokens": 50}}},
     ])
     write(f"{tmp}/claude/C--proj/a.jsonl", [
+        {"type": "user", "timestamp": ISO(NOW - 12), "uuid": "u1", "sessionId": "a", "message": {"role": "user", "content": "hi"}},
+        {"type": "user", "timestamp": ISO(NOW - 11), "uuid": "u2", "sessionId": "a",
+         "message": {"role": "user", "content": [{"type": "tool_result", "content": "ok"}]}},
+        {"type": "user", "timestamp": ISO(NOW - 11), "uuid": "u3", "isMeta": True, "sessionId": "a", "message": {"role": "user", "content": "x"}},
         {"type": "assistant", "timestamp": ISO(NOW - 10), "cwd": "C:\\proj", "sessionId": "a", "requestId": "r1",
          "message": {"id": "m1", "model": "claude-x", "stop_reason": "end_turn",
                      "usage": {"input_tokens": 10, "cache_creation_input_tokens": 1000, "cache_read_input_tokens": 9000, "output_tokens": 200}}},
@@ -90,6 +95,10 @@ def main():
         ("claude statusline quota", [w["pct"] for w in s["claude"]["quota"].get("windows", [])], [37.0, 64.0, 25.0]),
         ("claude 5h / 7d / Fable windows", [(w["label"], w["tokens"], w["basis"], round(w["pct"])) for w in s["claude"]["windows"]],
          [("5h", 1360, "official", 37), ("7d", 1360, "official", 64), ("Fable", 150, "official", 25)]),
+        ("claude prompts and requests (no tool results or meta)",
+         [(w["requests"], w["prompts"]) for w in s["claude"]["windows"][:2]], [(2, 1), (2, 1)]),
+        ("codex prompts", s["codex"]["windows"][1]["prompts"], 1),
+        ("gemini requests and prompts today (Pacific day)", (s["gemini"]["daily"]["requests"], s["gemini"]["daily"]["prompts"]), (1, 1)),
         ("local quota", s["local"]["quota"]["kind"], "unlimited"),
     ]
     bad = 0

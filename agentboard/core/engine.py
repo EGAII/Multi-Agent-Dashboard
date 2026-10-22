@@ -3,7 +3,7 @@ import os
 import threading
 import time
 
-from . import claude_app
+from . import claude_app, plans
 from . import config as cfgmod
 from .procs import Scanner
 from .usage import UsageModel
@@ -79,7 +79,8 @@ class Engine:
             out_types.append({k: s[k] for k in ("id", "name", "color", "local", "running", "working", "waiting", "today",
                                                  "today_cache", "requests_today", "week", "models", "windows")}
                              | {"loaded": s.get("loaded"), "quota_kind": q["kind"], "requests": requests,
-                                "visible": bool(s.get("visible"))})
+                                "visible": bool(s.get("visible")), "daily": s.get("daily"),
+                                "plans": plans.for_type(s["id"])})
         agents = []
         for a in sorted(self.agents, key=lambda a: (STATUS_ORDER.get(a.status, 9), a.type_name, a.name)):
             kind, label = a.surface

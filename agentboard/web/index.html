@@ -60,6 +60,12 @@
     <div class="add-head">Add a monitor<button class="iconbtn" id="add-close" title="Close" aria-label="Close" data-icon="x"></button></div>
     <div class="add-list" id="add-list" role="list"></div>
   </div>
+  <div class="pop plan-pop" id="plan-panel" role="dialog" aria-labelledby="plan-title" hidden>
+    <div class="add-head"><span id="plan-title">Plan</span><button class="iconbtn" id="plan-close" title="Close" aria-label="Close" data-icon="x"></button></div>
+    <div class="plan-list" id="plan-list" role="radiogroup" aria-labelledby="plan-title"></div>
+    <div class="plan-custom" id="plan-custom" hidden></div>
+    <p class="plan-note" id="plan-note"></p>
+  </div>
   <div class="ctx" id="ctx" role="menu" aria-label="Session" hidden>
     <button class="ctx-item" id="ctx-pin" role="menuitem"><span class="icon" data-icon="push-pin"></span><span id="ctx-pin-label">Pin to top</span></button>
     <div class="ctx-label">Highlight</div>

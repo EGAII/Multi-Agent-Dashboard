@@ -85,16 +85,41 @@ Where the percentage comes from depends on what is available:
 
 | Shown as | When | Meaning |
 | --- | --- | --- |
-| `42% used` | The CLI reports its own limits: Codex in its logs, and Claude Code once you enable the optional status line (see below). | The official percentage of your 5-hour or weekly limit. Tokens are counted over the same window. |
+| `42% used` | The CLI reports its own limits: Codex in its logs, and Claude Code once you enable the optional status line (see below). | The official percentage of your 5-hour or weekly limit. Tokens are counted over the same window. It always wins over an estimate. |
+| `42% est.`, or `23 of 15–160` | You picked a plan for the monitor, or Auto has learned your limit (see **Plans** below). | An estimate, drawn with a striped bar so it isn't mistaken for an official figure. |
 | `42% of 3.0M` | You set your own limits in the settings file (`limit_tokens` for 5 hours, `limit_tokens_7d` for 7 days, `limit_tokens_fable` for Fable). | Tokens against your own limit. |
-| `72% of peak`, or `busiest` | Neither of the above | Tokens compared with your busiest such window in the last 4 weeks. `busiest` means this window is the busiest so far. These bars are drawn lighter, because they are not a limit. |
-| `not used` | No tokens in that window | |
+| `72% of peak`, or `busiest` | None of the above | Tokens compared with your busiest such window in the last 4 weeks. `busiest` means this window is the busiest so far. These bars are drawn lighter, because they are not a limit. |
+| `not used`, `no limit` | No tokens in that window, or your plan has no limit for it | |
+
+### Plans: an estimate where the agent reports no %
+
+Most agents don't save their limit usage on your PC, so AgentBoard can't show their official %. Instead, each monitor has a small plan chip at the bottom (it reads **Auto** at first). Click it to choose how to estimate:
+
+| Choice | How the % is worked out |
+| --- | --- |
+| **Auto** | Each time a window has an official % (Claude's status line, Codex's logs), AgentBoard notes how many tokens 100% came to, and it uses the middle of the recent readings when the official figure is missing. Until it has learned something, the bar compares with your busiest window. |
+| **A vendor plan** | The plan's published limits, counted the same way the vendor counts them: tokens, requests (model replies) or messages (prompts you typed). A daily limit adds a **Today** bar, reset at midnight Pacific as Google does. |
+| **Custom** | Your own limits for 5h, 7d and Today, each in tokens, requests or messages. Type amounts like `3M`, `500k` or `1,500`. |
+
+The plans in AgentBoard use only what the vendors publish (October 2026):
+
+| Agent | Plans | Published limit |
+| --- | --- | --- |
+| Codex | Plus, Business | 15–160 local messages per 5 hours (GPT-6.1 Sol; other models differ). The bar runs to 160 and turns amber from 15. |
+| Codex | Pro | No 5-hour limit. The weekly limit isn't published. |
+| Gemini CLI | Code Assist Standard, Enterprise, Free | 1,500, 2,000 and 1,000 requests a day. Google may no longer serve free CLI requests. |
+| Claude Code | none | Anthropic publishes no token or message counts for Pro or Max, so use **Auto** (with the status line) or **Custom**. |
+| Grok, Qwen Code, others | none | xAI publishes no numbers (Grok plans share one weekly pool), and the free Qwen tier closed in April 2026. Use **Custom**. |
+
+Vendors change their limits often, so the panel shows when the figures were checked. Your choices, and what Auto has learned, stay on this PC.
+
+![The plan panel with a custom limit](docs/usage-plan.png)
 
 For Fable, Claude Code shows the official weekly percentage on its `/usage` screen, but doesn't pass it to the status line yet. Until it does, the Fable bar compares with your own limit or your busiest Fable week. AgentBoard already reads the field Claude Code uses for per-model windows (`model_scoped`), so the bar switches to the official figure once the status line includes it.
 
 Claude's limits are per account, so one Claude Code CLI session with the status line enabled is enough. Its percentages then cover your desktop app sessions too. The figures are kept for up to 6 hours after the last CLI update.
 
-A bar and its percentage turn amber at 80% and red at 95%, but only for official limits and your own limits. Hover over a bar to see the details.
+A bar and its percentage turn amber at 80% and red at 95%, but only for official limits, plan estimates and your own limits. Hover over a bar to see the details.
 
 "Tokens" means new input (including cache writes) plus output. Cache reads, meaning reused context, are shown separately, because they are much larger and cheaper. Anthropic and OpenAI don't publish their limits in tokens, so the token counts are a guide. The official percentage is the real measure.
 
