@@ -68,20 +68,26 @@ class Engine:
 
     # ---------------------------------------------------------------- what the UI receives
     def snapshot(self):
-        types = [s for s in self.summary.values() if s.get("visible")]
+        # every configured agent type goes to the page, so a monitor can be added for one that is not in use yet;
+        # "visible" marks the ones shown by default (running now or used recently)
+        types = list(self.summary.values())
         total_today = sum(s["today"] for s in types) or 0
         out_types = []
-        for s in sorted(types, key=lambda s: (-s["running"], -s["today"])):
+        for s in sorted(types, key=lambda s: (not s.get("visible"), -s["running"], -s["today"])):
             q = s["quota"]
-            # rings: outer = 5-hour window, inner = 7-day window (tokens used, and a % with its basis)
             requests = {"used": q["used"], "limit": q.get("limit")} if q.get("unit") == "req" else None
             out_types.append({k: s[k] for k in ("id", "name", "color", "local", "running", "working", "waiting", "today",
                                                  "today_cache", "requests_today", "week", "models", "windows")}
-                             | {"loaded": s.get("loaded"), "quota_kind": q["kind"], "requests": requests})
+                             | {"loaded": s.get("loaded"), "quota_kind": q["kind"], "requests": requests,
+                                "visible": bool(s.get("visible"))})
         agents = []
         for a in sorted(self.agents, key=lambda a: (STATUS_ORDER.get(a.status, 9), a.type_name, a.name)):
             kind, label = a.surface
-            agents.append({"key": a.key, "pid": a.pid, "type_id": a.type_id, "type_name": a.type_name, "color": a.color,
+            # sid names the session rather than the process, so pins and highlights survive a restart
+            sid = (f"app:{a.extra['app_session']}" if a.extra.get("app_session") else
+                   f"{a.type_id}:{os.path.splitext(os.path.basename(a.session_file))[0]}" if a.session_file else
+                   f"{a.type_id}:{a.name}")
+            agents.append({"key": a.key, "sid": sid, "pid": a.pid, "type_id": a.type_id, "type_name": a.type_name, "color": a.color,
                            "name": a.name, "status": a.status, "since": a.status_detail, "surface_kind": kind,
                            "surface": label, "host": a.host, "tokens": a.session_tokens, "model": a.model,
                            "folder": os.path.basename(a.cwd.rstrip("\\/"))})

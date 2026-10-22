@@ -18,7 +18,7 @@ def once():
     e.tick(force_usage=True)
     snap = e.snapshot()
     print(f"== Today {fmt(snap['totals']['today'])} tokens · {snap['totals']['agents']} agents running")
-    for t in snap["types"]:
+    for t in (t for t in snap["types"] if t["visible"]):
         wins = []
         for w in t["windows"]:
             pct = f" {w['pct']:.0f}% ({w['basis']})" if w["pct"] is not None else ""

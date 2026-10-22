@@ -37,21 +37,36 @@
       <button class="lbtn" data-cols="2" title="2 columns" aria-label="2 columns" aria-pressed="false" data-icon="columns"></button>
       <button class="lbtn" data-cols="1" title="1 column" aria-label="1 column" aria-pressed="false" data-icon="rows"></button>
     </div>
-    <span class="updated pywebview-drag-region" id="updated"></span>
+    <button class="addbtn" id="btn-add" title="Add monitor" aria-label="Add monitor" aria-expanded="false" aria-controls="add-panel" data-icon="plus"></button>
   </div>
 
   <div class="banner" id="banner" role="alert" hidden><span class="icon" data-icon="warning-circle"></span><span id="banner-text"></span></div>
 
   <main id="main">
     <section class="page" id="page-usage" role="tabpanel" aria-labelledby="tab-usage">
+      <div class="add-panel" id="add-panel" hidden>
+        <div class="add-head">Add a monitor<button class="iconbtn" id="add-close" title="Close" aria-label="Close" data-icon="x"></button></div>
+        <div class="add-list" id="add-list" role="list"></div>
+      </div>
       <div class="cards" id="cards"></div>
     </section>
     <section class="page" id="page-agents" role="tabpanel" aria-labelledby="tab-agents" hidden>
       <div class="types" id="types" role="toolbar" aria-label="Agent types"></div>
+      <div class="pinned" id="pinned" hidden>
+        <div class="pinned-head"><span class="icon" data-icon="push-pin"></span>Pinned</div>
+        <div class="pinned-grid" id="pinned-grid"></div>
+      </div>
       <div class="detail" id="detail" hidden></div>
     </section>
   </main>
 
+  <div class="ctx" id="ctx" role="menu" aria-label="Session" hidden>
+    <button class="ctx-item" id="ctx-pin" role="menuitem"><span class="icon" data-icon="push-pin"></span><span id="ctx-pin-label">Pin to top</span></button>
+    <div class="ctx-label">Highlight</div>
+    <div class="ctx-sw" id="ctx-sw" role="group" aria-label="Highlight colour"></div>
+    <div class="ctx-sep"></div>
+    <button class="ctx-item" id="ctx-open" role="menuitem"><span class="icon" data-icon="arrow-up-right"></span><span>Open</span></button>
+  </div>
   <div class="toast" id="toast" role="status" aria-live="polite"><span class="icon" id="toast-icon"></span><span id="toast-text"></span></div>
 
   <script src="vendor/icons.js"></script>

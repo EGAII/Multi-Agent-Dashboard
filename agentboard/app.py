@@ -13,7 +13,7 @@ from .core.engine import Engine
 from .core.focus import Focuser
 
 WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "index.html")
-WIDTH, HEIGHT = 780, 340  # landscape; the height then follows the page content
+WIDTH, HEIGHT = 720, 300  # landscape; the page then sets the width for its layout and fits the height
 MARGIN = 16
 
 

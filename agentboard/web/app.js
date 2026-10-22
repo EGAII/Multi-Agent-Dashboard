@@ -12,7 +12,7 @@
     set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage blocked: keep defaults */ } },
   };
   // open: which agent type's details are shown ("all", a type id, or null). Closed on every start.
-  const S = { api: null, snap: null, lastTs: 0, page: store.get("ab.page", "usage"), open: null, maximized: false, layout: "",
+  const S = { api: null, snap: null, lastTs: 0, page: store.get("ab.page", "usage"), open: null, maximized: false, layout: "", addOpen: false,
               cols: { usage: Number(store.get("ab.cols.usage", 2)) || 2, agents: Number(store.get("ab.cols.agents", 2)) || 2 } };
 
   // ------------------------------------------------------------------ formatting
@@ -43,19 +43,86 @@
   }
   const setIcon = (el, name) => { el.dataset.icon = name; paintIcons(el.parentNode || document); };
 
-  // ------------------------------------------------------------------ usage page: a bar per window (5h, 7d, Fable, ...)
+  // ------------------------------------------------------------------ usage page: a monitor (card) per agent type,
+  // with a bar per window (5h, 7d, Fable, ...). Agent types in use show by default; you can add others and remove any.
   const cards = new Map();
   const WIN_NAME = { "5h": "5-hour", "7d": "7-day" };
+  // hidden: monitors you removed; added: monitors you added. Kept in this window's storage.
+  const MON = (() => {
+    try {
+      const m = JSON.parse(store.get("ab.monitors", "{}"));
+      return { hidden: new Set(m.hidden || []), added: Array.isArray(m.added) ? m.added : [] };
+    } catch (e) {
+      return { hidden: new Set(), added: [] };
+    }
+  })();
+  const saveMon = () => store.set("ab.monitors", JSON.stringify({ hidden: [...MON.hidden], added: MON.added }));
 
-  function makeCard() {
+  function shownTypes(types) {
+    const out = types.filter((t) => t.visible && !MON.hidden.has(t.id));
+    for (const id of MON.added) {
+      const t = types.find((x) => x.id === id);
+      if (t && !out.includes(t)) out.push(t);
+    }
+    return out;
+  }
+  function addMonitor(id) {
+    MON.hidden.delete(id);
+    if (!MON.added.includes(id)) MON.added.push(id);
+    saveMon();
+    S.addOpen = false;
+    if (S.snap) renderUsage(S.snap);
+    checkLayout();
+  }
+  function removeMonitor(id) {
+    MON.hidden.add(id);
+    MON.added = MON.added.filter((x) => x !== id);
+    saveMon();
+    const t = (S.snap && S.snap.types || []).find((x) => x.id === id);
+    if (S.snap) renderUsage(S.snap);
+    checkLayout();
+    toast(`Removed ${t ? t.name : "the monitor"}. Add monitor brings it back.`);
+  }
+
+  function makeCard(id) {
     const el = document.createElement("article");
     el.className = "card";
+    el.dataset.id = id;
     el.innerHTML = `
       <div class="head"><i class="tdot"></i><h3></h3><span class="run"></span></div>
       <div class="bars"></div>
       <div class="note"></div>
-      <div class="meta"></div>`;
+      <div class="foot"><div class="meta"></div>
+        <button class="remove" title="Stop showing this monitor"><span class="icon" data-icon="x"></span>Remove</button></div>`;
+    el.querySelector(".remove").addEventListener("click", () => removeMonitor(id));
+    paintIcons(el);
     return el;
+  }
+
+  // the small + in the toolbar opens a strip at the top of the Usage page with the agent types that have no monitor yet
+  let addKey = "";
+  function updateAddPanel(types, shown) {
+    const addable = types.filter((t) => !shown.includes(t));
+    if (!addable.length) S.addOpen = false;
+    const btn = $("btn-add"), list = $("add-list");
+    btn.disabled = !addable.length;
+    btn.title = addable.length ? "Add monitor" : "Every agent type has a monitor";
+    btn.setAttribute("aria-expanded", String(S.addOpen));
+    $("add-panel").hidden = !S.addOpen;
+    const key = S.addOpen ? addable.map((t) => `${t.id}:${t.running}:${t.week}`).join("|") : "";
+    if (key === addKey) return;
+    addKey = key;
+    list.innerHTML = "";
+    if (!S.addOpen) return;
+    for (const t of addable) {
+      const b = document.createElement("button");
+      b.className = "add-item"; b.dataset.add = t.id; b.setAttribute("role", "listitem");
+      b.style.setProperty("--c", t.color);
+      b.innerHTML = `<i class="tdot"></i><span></span><em></em>`;
+      b.querySelector("span").textContent = t.name;
+      b.querySelector("em").textContent = t.running ? `${t.running} running` : t.week ? `7d ${fmt(t.week)}` : "no usage yet";
+      list.appendChild(b);
+    }
   }
 
   function makeBar() {
@@ -124,30 +191,50 @@
   function renderUsage(snap) {
     const box = $("cards");
     const types = snap.types || [];
-    if (!types.length) {
-      cards.clear();
-      box.innerHTML = emptyHtml("chart-donut", "No usage yet",
-        "AgentBoard reads the local logs of Claude Code, Codex, Gemini CLI and the other agents in your settings. Run one and it appears here.");
-      paintIcons(box);
-      return;
-    }
-    if (box.querySelector(".empty, .sk-card")) box.innerHTML = "";
+    if (box.querySelector(".sk-card, .empty")) box.innerHTML = "";
+    const shown = shownTypes(types);
     const seen = new Set();
-    types.forEach((t, i) => {
+    shown.forEach((t, i) => {
       let el = cards.get(t.id);
-      if (!el) { el = makeCard(); el.dataset.id = t.id; cards.set(t.id, el); }
+      if (!el) { el = makeCard(t.id); cards.set(t.id, el); }
       updateCard(el, t);
       if (box.children[i] !== el) box.insertBefore(el, box.children[i] || null);
       seen.add(t.id);
     });
     for (const [id, el] of cards) if (!seen.has(id)) { el.remove(); cards.delete(id); }
+    if (!shown.length && !box.querySelector(".empty")) {
+      box.innerHTML = emptyHtml("plus", "No monitors", "Use + at the top right to add one for any agent.");
+      paintIcons(box);
+    }
+    updateAddPanel(types, shown);
   }
 
   // ------------------------------------------------------------------ agents page: a tile per type, its agents below
   const SURFACE_ICON = { app: "app-window", ide: "code", cli: "terminal-window" };
   const COUNTED = [["approval", "approve"], ["your_turn", "your turn"], ["working", "working"]];
-  const tiles = new Map();  // tile id -> button
-  const rows = new Map();   // agent key -> row button
+  const tiles = new Map();     // tile id -> button
+  const rows = new Map();      // agent key -> row button in the open type's list
+  const pinRows = new Map();   // agent key -> row button in the Pinned list
+
+  // Pins and highlight colours for the sessions you care about, by session id (sid), kept in this window's storage.
+  const HL = { red: "#e5484d", orange: "#f2811d", yellow: "#d9a400", green: "#2f9e5b", blue: "#3b82f6", purple: "#8b5cf6" };
+  const MARK = (() => {
+    try {
+      const m = JSON.parse(store.get("ab.marks", "{}"));
+      return { pins: Array.isArray(m.pins) ? m.pins : [], hl: m.hl && typeof m.hl === "object" ? m.hl : {} };
+    } catch (e) {
+      return { pins: [], hl: {} };
+    }
+  })();
+  function saveMarks() {
+    MARK.pins = MARK.pins.slice(-100);  // sessions come and go; keep the list from growing forever
+    const keys = Object.keys(MARK.hl);
+    for (const k of keys.slice(0, Math.max(0, keys.length - 100))) delete MARK.hl[k];
+    store.set("ab.marks", JSON.stringify(MARK));
+  }
+  const isPinned = (a) => MARK.pins.includes(a.sid);
+  const pinnedOf = (list) => list.filter(isPinned).sort((x, y) => MARK.pins.indexOf(x.sid) - MARK.pins.indexOf(y.sid));
+  const pinFirst = (list) => [...pinnedOf(list), ...list.filter((a) => !isPinned(a))];
 
   function makeTile(id) {
     const b = document.createElement("button");
@@ -169,10 +256,12 @@
     b.className = "agent";
     b.innerHTML = `
       <span class="mark"><span class="mono-letter"></span><span class="status-dot"></span></span>
-      <span class="body"><span class="name"></span><span class="surface"><span class="icon"></span><span class="surface-label"><b></b><span></span></span></span></span>
+      <span class="body"><span class="name"><span class="icon pin-ic" data-icon="push-pin"></span><span class="ntext"></span></span>
+        <span class="surface"><span class="icon"></span><span class="surface-label"><b></b><span></span></span></span></span>
       <span class="side"><span class="tok mono"></span><span class="since"></span></span>
       <span class="go"><span class="icon" data-icon="arrow-up-right"></span></span>`;
     b.addEventListener("click", () => jump(b));
+    b.addEventListener("contextmenu", (e) => { e.preventDefault(); openCtx(b, e); });
     paintIcons(b);
     return b;
   }
@@ -184,10 +273,13 @@
 
   function updateRow(b, a) {
     b.dataset.key = a.key;
-    b.className = `agent s-${a.status}${b.classList.contains("busy") ? " busy" : ""}`;
+    b.dataset.sid = a.sid;
+    const hl = HL[MARK.hl[a.sid]];
+    b.className = `agent s-${a.status}${b.classList.contains("busy") ? " busy" : ""}${isPinned(a) ? " is-pinned" : ""}${hl ? " hl" : ""}`;
     b.style.setProperty("--c", a.color);
+    if (hl) b.style.setProperty("--hl", hl); else b.style.removeProperty("--hl");
     b.querySelector(".mono-letter").textContent = monogram(a.type_name);
-    b.querySelector(".name").textContent = a.name;
+    b.querySelector(".ntext").textContent = a.name;
     const ic = b.querySelector(".surface .icon"), want = SURFACE_ICON[a.surface_kind] || "terminal-window";
     if (ic.dataset.icon !== want) { ic.dataset.icon = want; ic.dataset.painted = ""; paintIcons(b); }
     // "Claude Code CLI · Windows Terminal": what the agent is, then where it lives
@@ -200,7 +292,7 @@
     since.textContent = a.status === "approval" ? "approve?" : a.status === "working" ? "working" : a.since || "";
     since.className = `since${a.status === "approval" ? " approval" : ""}`;
     const extra = [a.model, a.folder && `folder ${a.folder}`, `pid ${a.pid}`].filter(Boolean).join(" · ");
-    b.title = `${a.name}\n${a.surface}\n${extra}\nClick to open it`;
+    b.title = `${a.name}\n${a.surface}\n${extra}\nClick to open it, right-click to pin or highlight it`;
     b.setAttribute("aria-label", `${a.name}, ${a.status.replace("_", " ")}, ${a.surface}. Open it`);
   }
 
@@ -208,8 +300,9 @@
     const all = snap.agents || [];
     const box = $("types"), detail = $("detail");
     if (!all.length) {
-      tiles.clear(); rows.clear(); S.open = null;
+      tiles.clear(); rows.clear(); pinRows.clear(); S.open = null;
       detail.hidden = true; detail.innerHTML = "";
+      $("pinned").hidden = true;
       box.innerHTML = emptyHtml("terminal-window", "No agents running",
         "Start Claude Code, Codex, Gemini CLI, Ollama or any agent in your settings. It shows up here within a few seconds.");
       paintIcons(box);
@@ -245,22 +338,77 @@
     });
     for (const [id, b] of tiles) if (!seen.has(id)) { b.remove(); tiles.delete(id); }
 
+    // pinned sessions: always listed under the tiles, whichever type is open
+    const pinned = pinnedOf(all);
+    $("pinned").hidden = !pinned.length;
+    syncRows($("pinned-grid"), pinned, pinRows);
+
     const open = list.find((f) => f.id === S.open);
     detail.hidden = !open;
-    if (!open) { detail.innerHTML = ""; return; }
+    if (!open) { detail.innerHTML = ""; rows.clear(); return; }
     let grid = detail.querySelector(".detail-grid");
     if (!grid) { grid = document.createElement("div"); grid.className = "detail-grid"; detail.appendChild(grid); }
+    syncRows(grid, pinFirst(open.agents), rows);
+  }
+
+  // Put one row per agent into a grid, reusing row elements (keyed by agent) so focus and hover survive refreshes.
+  function syncRows(grid, agents, map) {
     const keep = new Set();
-    const want = open.agents.map((a) => {
-      let b = rows.get(a.key);
-      if (!b) { b = makeRow(); rows.set(a.key, b); }
+    const want = agents.map((a) => {
+      let b = map.get(a.key);
+      if (!b) { b = makeRow(); map.set(a.key, b); }
       updateRow(b, a);
       keep.add(a.key);
       return b;
     });
     const same = want.length === grid.children.length && want.every((b, j) => grid.children[j] === b);
     if (!same) { grid.innerHTML = ""; want.forEach((b) => grid.appendChild(b)); }
-    for (const [k, b] of rows) if (!keep.has(k)) { b.remove(); rows.delete(k); }
+    for (const [k, b] of map) if (!keep.has(k)) { b.remove(); map.delete(k); }
+  }
+
+  // ------------------------------------------------------------------ right-click menu on an agent: pin, highlight, open
+  let ctxRow = null;
+  function openCtx(row, e) {
+    ctxRow = row;
+    const sid = row.dataset.sid, pinned = MARK.pins.includes(sid), cur = MARK.hl[sid] || "";
+    $("ctx-pin-label").textContent = pinned ? "Unpin" : "Pin to top";
+    setIcon($("ctx-pin").querySelector(".icon"), pinned ? "push-pin-slash" : "push-pin");
+    $("ctx-sw").querySelectorAll(".sw").forEach((s) => s.setAttribute("aria-pressed", String(s.dataset.hl === cur)));
+    const m = $("ctx");
+    m.hidden = false;
+    const r = row.getBoundingClientRect();
+    const x = e.clientX || r.left + 24, y = e.clientY || r.bottom;  // a keyboard-opened menu has no pointer position
+    m.style.left = `${Math.max(6, Math.min(x, window.innerWidth - m.offsetWidth - 6))}px`;
+    m.style.top = `${y + m.offsetHeight > window.innerHeight - 6 ? Math.max(6, y - m.offsetHeight) : y}px`;
+    $("ctx-pin").focus();
+  }
+  function closeCtx() {
+    $("ctx").hidden = true;
+    ctxRow = null;
+  }
+  function applyMark(change) {
+    if (!ctxRow) return;
+    change(ctxRow.dataset.sid);
+    saveMarks();
+    closeCtx();
+    if (S.snap) renderAgents(S.snap);
+    checkLayout();
+  }
+  function buildCtx() {
+    $("ctx-sw").innerHTML = `<button class="sw none" data-hl="" role="menuitemradio" title="No highlight" aria-label="No highlight"><span class="icon" data-icon="x"></span></button>` +
+      Object.entries(HL).map(([k, c]) => `<button class="sw" data-hl="${k}" role="menuitemradio" title="${k}" aria-label="Highlight ${k}" style="--hl:${c}"></button>`).join("");
+    paintIcons($("ctx"));
+    $("ctx-pin").addEventListener("click", () => applyMark((sid) => {
+      MARK.pins = MARK.pins.includes(sid) ? MARK.pins.filter((s) => s !== sid) : [...MARK.pins, sid];
+    }));
+    $("ctx-sw").addEventListener("click", (e) => {
+      const s = e.target.closest(".sw");
+      if (s) applyMark((sid) => { if (s.dataset.hl) MARK.hl[sid] = s.dataset.hl; else delete MARK.hl[sid]; });
+    });
+    $("ctx-open").addEventListener("click", () => { const r = ctxRow; closeCtx(); if (r) jump(r); });
+    document.addEventListener("mousedown", (e) => { if (!$("ctx").hidden && !e.target.closest("#ctx")) closeCtx(); });
+    window.addEventListener("blur", closeCtx);
+    $("main").addEventListener("scroll", closeCtx, { passive: true });
   }
 
   async function jump(b) {
@@ -289,7 +437,7 @@
                      page.offsetHeight + bottom + 2);
   }
   // page width: the landscape panel, or a narrow one in single-column mode
-  const WIDE = 764, NARROW = 384;
+  const WIDE = 704, NARROW = 384;
   const nextResize = () => new Promise((done) => {
     const t = setTimeout(done, 400);
     window.addEventListener("resize", () => { clearTimeout(t); requestAnimationFrame(() => requestAnimationFrame(done)); }, { once: true });
@@ -307,8 +455,8 @@
   }
   // Refit only when something that changes the height changed, not on every refresh.
   function checkLayout() {
-    const sig = [S.page, S.open, S.cols[S.page], cards.size, tiles.size, $("detail").querySelectorAll(".agent").length,
-                 $("banner").hidden].join("|");
+    const sig = [S.page, S.open, S.cols[S.page], cards.size, S.addOpen, addKey, tiles.size,
+                 $("detail").querySelectorAll(".agent").length, pinRows.size, $("banner").hidden].join("|");
     if (sig !== S.layout) { S.layout = sig; fitSoon(); }
   }
 
@@ -356,7 +504,7 @@
   function tickClock() {
     if (!S.snap || !S.snap.ts) return;
     const age = Math.max(0, Math.round(Date.now() / 1000 - S.snap.ts));
-    $("updated").textContent = age < 5 ? "live" : `updated ${age}s ago`;
+    $("live").title = age < 5 ? "Live" : `Updated ${age}s ago`;
     $("live").classList.toggle("stale", age > 15);
   }
 
@@ -375,6 +523,7 @@
       $(`tab-${p}`).setAttribute("aria-selected", String(p === page));
       $(`page-${p}`).hidden = p !== page;
     }
+    $("btn-add").hidden = page !== "usage";  // monitors live on the Usage page
     syncCols();
     checkLayout();
   }
@@ -423,7 +572,25 @@
     syncMaxIcon();
     if (!S.maximized) fitSoon();
   }
-  window.agentboard = { showPage, setTheme, openFold, toggleMax, setCols };  // handy from devtools and the screenshot script
+  function openAdd(open) {
+    S.addOpen = !!open;
+    if (S.snap) renderUsage(S.snap);
+    checkLayout();
+    if (S.addOpen) { showPage("usage"); $("main").scrollTop = 0; }  // the strip sits at the top of the Usage page
+  }
+  // handy from devtools and the screenshot script
+  function markSession(sid, { pin, hl } = {}) {  // for the screenshot script: what the right-click menu does
+    if (pin !== undefined) MARK.pins = pin ? [...MARK.pins.filter((s) => s !== sid), sid] : MARK.pins.filter((s) => s !== sid);
+    if (hl !== undefined) { if (hl) MARK.hl[sid] = hl; else delete MARK.hl[sid]; }
+    saveMarks();
+    if (S.snap) renderAgents(S.snap);
+    checkLayout();
+  }
+  function rightClick(n) {  // for the screenshot script: open the menu on the n-th visible agent
+    const b = document.querySelectorAll("#page-agents .agent")[n];
+    if (b) { const r = b.getBoundingClientRect(); openCtx(b, { clientX: r.left + 60, clientY: r.top + 20 }); }
+  }
+  window.agentboard = { showPage, setTheme, openFold, toggleMax, setCols, openAdd, addMonitor, removeMonitor, markSession, rightClick };
 
   function wire() {
     paintIcons();
@@ -445,11 +612,20 @@
     $("btn-settings").addEventListener("click", async () => { if (S.api) toast(await S.api.open_settings()); });
     $("btn-min").addEventListener("click", () => S.api && S.api.minimize());
     $("btn-max").addEventListener("click", toggleMax);
+    buildCtx();
+    $("btn-add").addEventListener("click", () => openAdd(!S.addOpen));
+    $("add-close").addEventListener("click", () => openAdd(false));
+    $("add-list").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-add]");
+      if (b) addMonitor(b.dataset.add);
+    });
     document.querySelectorAll("#layout .lbtn").forEach((b) => b.addEventListener("click", () => setCols(Number(b.dataset.cols))));
     $("btn-close").addEventListener("click", () => S.api && S.api.close());
     $("titlebar").addEventListener("dblclick", (e) => { if (!e.target.closest("button")) toggleMax(); });
     document.addEventListener("keydown", (e) => {
       if (e.ctrlKey && (e.key === "1" || e.key === "2")) showPage(e.key === "1" ? "usage" : "agents");
+      if (e.key === "Escape" && !$("ctx").hidden) closeCtx();
+      else if (e.key === "Escape" && S.addOpen) openAdd(false);
     });
     if (document.fonts) document.fonts.ready.then(() => { S.layout = ""; checkLayout(); });
     setInterval(tickClock, 1000);

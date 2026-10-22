@@ -14,6 +14,9 @@ TYPES = [
     ("ollama", "Ollama", "#64748b", True, 1, 0, 0, 310_000, 0, 0, "unlimited",
      (120_000, 31, "peak", 95), (1_480_000, 100, "peak", None)),
 ]
+# configured but unused agent types: not shown until you add a monitor for them
+IDLE_TYPES = [("grok", "Grok", "#7a7a7a"), ("qwen", "Qwen Code", "#7c3aed"), ("opencode", "opencode", "#e8a33d"),
+              ("aider", "Aider", "#16a34a")]
 # per-model weekly windows: key, label, (tokens, %, basis, minutes to reset)
 MODEL_WINDOWS = {"claude": [("fable", "Fable", (3_150_000, 46, "official", 4 * 1440 + 60))]}
 AGENTS = [
@@ -66,11 +69,17 @@ class DemoEngine:
             types.append({"id": tid, "name": name, "color": color, "local": local, "running": running, "working": working,
                           "waiting": waiting, "today": int(today * grow), "today_cache": cache, "requests_today": reqs,
                           "week": w7[0], "models": [], "windows": windows, "loaded": ["qwen3:8b"] if local else None,
-                          "quota_kind": kind, "requests": {"used": reqs, "limit": 1000} if reqs else None})
+                          "quota_kind": kind, "requests": {"used": reqs, "limit": 1000} if reqs else None, "visible": True})
+        for tid, name, color in IDLE_TYPES:
+            types.append({"id": tid, "name": name, "color": color, "local": False, "running": 0, "working": 0, "waiting": 0,
+                          "today": 0, "today_cache": 0, "requests_today": 0, "week": 0, "models": [], "loaded": None,
+                          "windows": [{"key": k, "label": k, "tokens": 0, "pct": None, "basis": None, "end": None, "ref": None}
+                                      for k in ("5h", "7d")],
+                          "quota_kind": "none", "requests": None, "visible": False})
         colors = {t[0]: (t[1], t[2]) for t in TYPES}
         agents = []
         for i, (tid, name, status, since, skind, surface, tokens, model) in enumerate(AGENTS):
-            agents.append({"key": f"demo-{i}", "pid": 4100 + i * 37, "type_id": tid, "type_name": colors[tid][0],
+            agents.append({"key": f"demo-{i}", "sid": f"demo:{name}", "pid": 4100 + i * 37, "type_id": tid, "type_name": colors[tid][0],
                            "color": colors[tid][1], "name": name, "status": status, "since": since, "surface_kind": skind,
                            "surface": surface, "host": "", "tokens": tokens, "model": model, "folder": "demo"})
         return {"ts": now, "ready": True, "error": None,

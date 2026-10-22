@@ -1,10 +1,11 @@
 # AgentBoard
 
-A landscape, always-on-top Windows panel for all your coding agents.
+A compact, landscape, always-on-top Windows panel for all your coding agents.
 
-- **Usage page**: one card per agent type, with a bar for each limit window: the 5-hour window, the last 7 days and, for Claude, Fable's own weekly window.
+- **Usage page**: a monitor (card) per agent type, with a bar for each limit window: the 5-hour window, the last 7 days and, for Claude, Fable's own weekly window. The small **+** adds a monitor for any agent type, and **× Remove** hides one.
 - **Columns**: small buttons in the toolbar lay out either page in 3, 2 or 1 columns.
 - **Agents page**: a tile for **All agents** and one for each agent type. Click a tile to show its agents below in a five-row scrolling list; the window grows to fit it. Each agent shows its status and where it runs: Claude Code CLI in Windows Terminal, the Claude desktop app, Codex CLI, Codex in a VS Code terminal, and so on.
+- **Pin and highlight**: right-click an agent to pin it, so it stays listed under the tiles, or to mark it with a colour.
 - **Click an agent** to open it exactly where it runs:
   - a Claude desktop session opens in the Claude app;
   - a terminal agent's own tab is selected, even when several tabs have the same title.
@@ -13,9 +14,9 @@ It works with Claude Code, Codex, Gemini CLI, Grok, Qwen Code, opencode, Aider a
 
 ![Usage page in 2 columns: a card per agent type with 5h, 7d and Fable bars](docs/usage-light.png)
 
-| Agents, tiles only | Agents in 3 columns, All agents open | Agents, Claude Code open (dark) |
+| Agents, tiles only | Agents in 3 columns, All agents open | Pinned and highlighted sessions (dark) |
 | --- | --- | --- |
-| ![Agents page with a tile per agent type](docs/agents-folded-light.png) | ![Every agent listed three per row in a five-row scrolling panel](docs/agents-light.png) | ![Claude Code's agents listed two per row](docs/agents-dark.png) |
+| ![Agents page with a tile per agent type](docs/agents-folded-light.png) | ![Every agent listed three per row in a five-row scrolling panel](docs/agents-light.png) | ![Two pinned sessions under the tiles, and highlighted rows in the list](docs/agents-dark.png) |
 
 These screenshots use the built-in demo data (`--demo`), so the names are made up.
 
@@ -26,7 +27,7 @@ These screenshots use the built-in demo data (`--demo`), so the names are made u
    - On the first run it installs `psutil` and `pywebview`.
    - The window is drawn by Microsoft Edge WebView2, which comes with Windows 11.
 
-The window opens in the bottom-right corner and stays on top of other windows. Its width is fixed: 780px, or about 400px in single-column mode. Its height follows what is shown, and in the lower half of the screen it grows upwards, so it stays clear of the taskbar.
+The window opens in the bottom-right corner and stays on top of other windows. Its width is fixed: about 720px, or about 400px in single-column mode. Its height follows what is shown, and in the lower half of the screen it grows upwards, so it stays clear of the taskbar.
 
 In the title bar:
 - the moon or sun icon switches between light and dark (it follows Windows until you choose);
@@ -34,14 +35,17 @@ In the title bar:
 - the gear opens the settings file;
 - minimise, maximise and close. Maximise fills the screen the window is on, above the taskbar, and the cards spread into one row. Click it again, or double-click the title bar, to go back.
 
-Under the title bar, the three small buttons on the right set the columns: 3, 2 or 1. Each page keeps its own choice, and on the Agents page it applies to both the tiles and the agent list.
+Under the title bar, on the right:
+- three small buttons set the columns: 3, 2 or 1. Each page keeps its own choice, and on the Agents page it applies to both the tiles and the agent list;
+- on the Usage page, a small **+** adds a monitor (see below).
 
-One column is the compact mode:
-- the window narrows to about 400px, keeping its right edge where it was;
-- today's totals move to their own row under the Usage / Agents switch;
-- each usage bar fits on one line, and the agent rows are shorter.
+The dot next to the name is green while the data is live, and grey if refreshing has stopped. Hover over it to see when the data last updated.
 
-Text keeps its normal size. Switching back to 2 or 3 columns widens the window again.
+One column makes the window narrow:
+- it shrinks to about 400px, keeping its right edge where it was;
+- today's totals move to their own row under the Usage / Agents switch.
+
+Switching back to 2 or 3 columns widens the window again.
 
 ![Single-column compact mode](docs/compact-usage.png)
 
@@ -57,7 +61,19 @@ Other ways to run it:
 
 ## Usage page: 5-hour, 7-day and Fable bars
 
-There is one card per agent type that is running now or was used recently. Each bar shows the tokens used in one window, and how full that window is:
+### Choosing the monitors
+
+Each card is a monitor for one agent type. Agent types that are running now or were used recently get a monitor by default.
+- **Add one**: click the small **+** at the right of the toolbar. A strip opens at the top of the page with every agent type in your settings that has no monitor yet: Claude Code, Codex, Gemini CLI, Grok, Qwen Code, opencode, Aider, Ollama and your own. Pick one to add it, even if it hasn't been used yet. Press Esc, × or **+** again to close the strip. When every agent type has a monitor, the **+** is greyed out.
+- **Remove one**: click the small **× Remove** at the bottom of the monitor. It stays hidden, even while that agent is in use, until you add it back.
+
+AgentBoard remembers your choice in its window's own storage on this PC.
+
+![The add-monitor strip, opened with +](docs/usage-add.png)
+
+### Reading a monitor
+
+Each bar shows the tokens used in one window, and how full that window is:
 - **`5h`**: the current 5-hour window.
 - **`7d`**: the last 7 days.
 - **`Fable`** (Claude only): tokens used with Claude Fable models in the last 7 days. Claude plans meter Fable on a weekly limit of its own.
@@ -103,6 +119,17 @@ Click a tile to list its agents below the tiles, and the window grows to fit the
 | `Codex · VS Code terminal`, `Claude Code · Cursor terminal` | code | the CLI in an IDE's built-in terminal |
 
 Hover over an agent to see the model, folder and process ID. Click **need you** at the top to open **All agents**.
+
+### Pin and highlight important sessions
+
+Right-click an agent, in any list, to open its menu:
+- **Pin to top** keeps the session in a **Pinned** list under the tiles, which shows whichever tile is open. Pinned sessions also come first in every list, with a pin icon. **Unpin** removes it.
+- **Highlight** marks the row with one of six colours: a stripe on the left and a light tint. **×** removes the colour.
+- **Open** does the same as a click.
+
+Pins and colours belong to the session, not the process: the Claude app's session id, or else the CLI session file. They stay when AgentBoard or the PC restarts, and AgentBoard remembers them on this PC. A Claude desktop session keeps them even when the app restarts its agent process.
+
+![The right-click menu on a pinned, highlighted session](docs/agents-pinned.png)
 
 ## How the jump works
 
