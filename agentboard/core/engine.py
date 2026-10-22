@@ -15,7 +15,7 @@ class Engine:
     def __init__(self, cfg=None):
         self.cfg = cfg or cfgmod.load()
         self.scanner = Scanner(self.cfg)
-        self.usage = UsageModel(self.cfg, days_file=cfgmod.DAYS_FILE)
+        self.usage = UsageModel(self.cfg, days_file=cfgmod.DAYS_FILE, limits_file=cfgmod.LIMITS_FILE)
         self.agents, self.summary = [], {}
         self.error = None
         self._last_usage = 0.0
@@ -35,9 +35,10 @@ class Engine:
             return agents, self.summary
 
     def read_quota(self, type_id):
-        """Re-read the logs and the status line now; -> that agent type's windows with an official %."""
+        """Re-read the logs and the status line now; -> (windows with an official %, limits learned from hits)."""
         self.tick(force_usage=True)
-        return [w for w in (self.summary.get(type_id) or {}).get("windows", []) if w.get("basis") == "official"]
+        s = self.summary.get(type_id) or {}
+        return [w for w in s.get("windows", []) if w.get("basis") == "official"], s.get("hit_limits") or {}
 
     def run(self, on_update):
         def loop():
@@ -88,10 +89,9 @@ class Engine:
                                                  "today_cache", "requests_today", "week", "models", "windows")}
                              | {"loaded": s.get("loaded"), "quota_kind": q["kind"], "requests": requests,
                                 "visible": bool(s.get("visible")), "daily": s.get("daily"),
-                                "plans": plans.for_type(s["id"]),
-                                # its CLI reports the official quota, so "Read quota" can fetch it
-                                "read_quota": bool(conf.get(s["id"], {}).get("cli"))
-                                              and conf.get(s["id"], {}).get("quota", {}).get("kind") == "from_log"})
+                                "plans": plans.for_type(s["id"]), "hit_limits": s.get("hit_limits") or {},
+                                # its logs or status line can carry the official quota, so "Read quota" re-reads them
+                                "read_quota": conf.get(s["id"], {}).get("quota", {}).get("kind") == "from_log"})
         agents = []
         for a in sorted(self.agents, key=lambda a: (STATUS_ORDER.get(a.status, 9), a.type_name, a.name)):
             kind, label = a.surface

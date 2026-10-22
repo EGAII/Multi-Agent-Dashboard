@@ -84,10 +84,7 @@ Each bar shows the tokens used in one window, and how full that window is:
 - **`Fable`** (Claude only): tokens used with Claude Fable models in the last 7 days. Claude plans meter Fable on a weekly limit of its own.
 - **Other windows the CLI reports**, such as **`30d`** for Codex on the free plan: each gets its own bar with the official %, and tokens are counted over that window.
 - **Next line**: when the windows reset (`5h resets in 2h 14m · 7d in 3d 3h · Fable in 4d 1h`), or, without official limits, when the current 5-hour block ends.
-- **Read quota**: on a Claude Code or Codex card with no official % at all, a small button sits at the right of that line.
-  - It re-reads the logs and the status line at once.
-  - If there's still no official %, it opens the agent's CLI (`claude` or `codex`) in Windows Terminal, in your home folder. Send one message there: Claude Code then passes its 5h and 7d % to the status line, Codex writes its limits to its session log, and the bars fill in at the next refresh.
-  - AgentBoard only opens the CLI; it sends nothing for you.
+- **Read quota**: on a Claude Code or Codex card with no official % at all, a small button sits at the right of that line. It re-reads the logs and the status line at once, learns from any new limit hit, and says what it found: the official %, an estimate from a limit hit, or nothing yet. It opens nothing and sends nothing over the network; AgentBoard reads all of this on its own every 15 seconds anyway.
 - **Bottom line**: today's tokens, cache reads, and, where relevant, requests or loaded local models.
 
 Where the percentage comes from depends on what is available:
@@ -95,7 +92,7 @@ Where the percentage comes from depends on what is available:
 | Shown as | When | Meaning |
 | --- | --- | --- |
 | `42% used` | The CLI reports its own limits: Codex in its logs, and Claude Code once you enable the optional status line (see below). | The official percentage of your 5-hour or weekly limit. Tokens are counted over the same window. It always wins over an estimate. |
-| `42% est.`, or `23 of 15–160` | You picked a plan for the monitor, or Auto has learned your limit (see **Plans** below). | An estimate, drawn with a striped bar so it isn't mistaken for an official figure. |
+| `42% est.`, or `23 of 15–160` | You picked a plan for the monitor, or Auto has learned your limit from official readings or from a limit you hit (see **Plans** below). | An estimate, drawn with a striped bar so it isn't mistaken for an official figure. |
 | `42% of 3.0M` | You set your own limits in the settings file (`limit_tokens` for 5 hours, `limit_tokens_7d` for 7 days, `limit_tokens_fable` for Fable). | Tokens against your own limit. |
 | `no quota` | None of the above | Only the tokens are shown, with an empty bar, until a quota is known. Pick a plan or set a custom limit to get a %. |
 | `not used`, `no limit` | No tokens in that window; or a local model, or a plan with no limit for that window | |
@@ -106,7 +103,7 @@ Most agents don't save their limit usage on your PC, so AgentBoard can't show th
 
 | Choice | How the % is worked out |
 | --- | --- |
-| **Auto** | Each time a window has an official % (Claude's status line, Codex's logs), AgentBoard notes how many tokens 100% came to, and it uses the middle of the recent readings when the official figure is missing. Until it has learned something, the window shows `no quota`. |
+| **Auto** | Each time a window has an official % (Claude's status line, Codex's logs), AgentBoard notes how many tokens 100% came to, and it uses the middle of the recent readings when the official figure is missing. Without official readings, it learns from the rate limits you hit (see below). Until it has learned something, the window shows `no quota`. |
 | **A vendor plan** | The plan's published limits, counted the same way the vendor counts them: tokens, requests (model replies) or messages (prompts you typed). A daily limit adds a **Today** bar, reset at midnight Pacific as Google does. |
 | **Custom** | Your own limits for 5h, 7d and Today, each in tokens, requests or messages. Type amounts like `3M`, `500k` or `1,500`. |
 
@@ -121,6 +118,15 @@ The plans in AgentBoard use only what the vendors publish (October 2026):
 | Grok, Qwen Code, others | none | xAI publishes no numbers (Grok plans share one weekly pool), and the free Qwen tier closed in April 2026. Use **Custom**. |
 
 Vendors change their limits often, so the panel shows when the figures were checked. Your choices, and what Auto has learned, stay on this PC.
+
+### Learning from the limits you hit
+
+When Claude Code stops because you reached a limit, its log records the refusal: which limit (5-hour or weekly) and when it resets. That window then held exactly 100%, so AgentBoard counts the tokens from the window's start up to the hit and uses that as an estimate of the limit (the middle of your last five hits). This needs no CLI session and no network: it works for Claude desktop app sessions too, and it is what Auto falls back on when no official % comes in, for example on organization plans, which don't get the status line's limits.
+- The 5-hour bar then shows `x% est.`, and its tooltip says which hit it was learned from.
+- The learned limit is kept in `%USERPROFILE%\.agentboard\limits.json`, so it survives Claude Code deleting old logs.
+- A hit older than 25 days isn't used: Claude Code deletes transcripts after 30 days, so most of that window's logs are already gone and the count would be too low.
+- A learned limit is dropped once a later window goes more than 10% past it without a hit (a bigger plan, or a count that was too low).
+- Tokens are a stand-in: Anthropic weighs usage by model, and sessions on other devices or on claude.ai aren't in your logs. The estimate is a guide, not the official figure.
 
 ![The plan panel with a custom limit](docs/usage-plan.png)
 
@@ -284,7 +290,7 @@ AgentBoard only reads files on this PC:
 - Codex's state database, in read-only mode;
 - the Claude app's session records: only the ids, title, archive flag and last activity time.
 
-For the Overview calendar it keeps `days.json` in `%USERPROFILE%\.agentboard`: dates and token counts per agent type, nothing else. Your choices on the page (monitors, plans, pins, order) stay in the window's own storage.
+For the Overview calendar it keeps `days.json` in `%USERPROFILE%\.agentboard`: dates and token counts per agent type, nothing else. Next to it, `limits.json` holds the limits learned from your limit hits: the limit type, the times and a token count. Your choices on the page (monitors, plans, pins, order) stay in the window's own storage.
 
 It never logs in anywhere, never uses your saved credentials, and never sends data anywhere. Its one network call goes to your own Ollama server at `127.0.0.1`, to list the loaded models.
 
@@ -293,7 +299,7 @@ The window's page is served from a local web server that only this PC can reach.
 ## Known limits
 
 - **The official Fable percentage isn't available yet.** Claude Code shows it only on its `/usage` screen, so the Fable bar uses your own limit or shows `no quota` (see the Usage page section).
-- **Official Claude limits need a CLI session.** Claude doesn't store the 5h and 7d percentages on disk for desktop app sessions, so without a Claude Code CLI session with the status line, the bars use what Auto has learned, your own limits, or show `no quota`. **Read quota** on the card opens such a session for you.
+- **Official Claude limits need a CLI session.** Claude doesn't store the 5h and 7d percentages on disk for desktop app sessions, so without a Claude Code CLI session with the status line, the bars use what Auto has learned (from official readings or from your limit hits), your own limits, or show `no quota`. Claude Code's own docs say the status line's limits come only for claude.ai Pro and Max accounts, and Claude Code's background `/usage` report has no plan usage on organization plans either.
 - **The Claude session link** is the app's own, but it isn't documented, so a future app version could change it. If it stops working, the click still brings the app to the front.
 - **Codex inside the ChatGPT app** runs as one background process for all its threads, so it appears as one agent, and a click only brings the app to the front. History that Codex imported from other agents is not counted as Codex usage. On the free plan, Codex reports a 30-day window instead of 5h and 7d ones, so the card shows a **30d** bar with the official %, while 5h and 7d show `no quota` unless you pick a plan.
 - **Not tested live**: Gemini CLI, Grok, Qwen Code and opencode weren't installed on the test PC. Their log readers are tested with sample logs in each tool's format (`tests/test_readers.py`).

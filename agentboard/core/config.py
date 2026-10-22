@@ -29,6 +29,7 @@ HOME = os.path.expanduser("~")
 APP_DIR = os.path.join(HOME, ".agentboard")
 USER_CONFIG = os.path.join(APP_DIR, "config.json")
 DAYS_FILE = os.path.join(APP_DIR, "days.json")  # tokens per agent type on each past day, for the Overview page
+LIMITS_FILE = os.path.join(APP_DIR, "limits.json")  # limits learned from the rate limits you hit
 
 DEFAULT_CONFIG = {
     "refresh_seconds": 3,
@@ -37,13 +38,13 @@ DEFAULT_CONFIG = {
     "history_days": 31,
     "agents": [
         {"id": "claude", "name": "Claude Code", "color": "#d4704f",
-         "match": {"exe": ["claude.exe", "claude"], "cmd_regex": r"@anthropic-ai[\\/]claude-code"}, "cli": "claude",
+         "match": {"exe": ["claude.exe", "claude"], "cmd_regex": r"@anthropic-ai[\\/]claude-code"},
          "reader": "claude", "logs": ["~/.claude/projects/*/*.jsonl"],
          "quota": {"kind": "from_log", "fallback": {"kind": "tokens_window", "window_hours": 5, "limit_tokens": None}},
          # Claude plans also meter some models per week on their own; this one gets its own bar
          "model_windows": [{"key": "fable", "label": "Fable", "match": "fable"}]},
         {"id": "codex", "name": "Codex", "color": "#10a37f",
-         "match": {"exe": ["codex.exe", "codex"], "cmd_regex": r"@openai[\\/]codex"}, "cli": "codex",
+         "match": {"exe": ["codex.exe", "codex"], "cmd_regex": r"@openai[\\/]codex"},
          "reader": "codex", "logs": ["~/.codex/sessions/**/*.jsonl"],
          "quota": {"kind": "from_log", "fallback": {"kind": "none"}}},
         {"id": "gemini", "name": "Gemini CLI", "color": "#4285f4",

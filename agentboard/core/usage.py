@@ -58,6 +58,7 @@ class FileState:
     tokens_used: int = 0   # total reported by the agent's own database, when it has one
     imported_before: float = 0.0  # history copied in from another agent before this time is not this agent's usage
     prompts: list = field(default_factory=list)  # times of the prompts you typed (plans often count these)
+    limit_hits: dict = field(default_factory=dict)  # (limit type, resets at) -> when you hit it
 
     def own_events(self):
         return [e for e in self.events if e.ts > self.imported_before] if self.imported_before else self.events
@@ -84,6 +85,10 @@ def read_claude(st, o):
     elif t == "assistant":
         m = o.get("message") or {}
         u = m.get("usage") or {}
+        ql = o.get("quotaLimits")  # on the error Claude Code logs when you hit a rate limit (HTTP 429)
+        if isinstance(ql, dict) and ql.get("status") == "rejected" and ql.get("resetsAt"):
+            hit = (ql.get("rateLimitType") or "", float(ql["resetsAt"]))
+            st.limit_hits[hit] = min(ts, st.limit_hits.get(hit, ts))
         key = (m.get("id"), o.get("requestId"))
         if u and key not in st.seen:
             st.seen.add(key)
@@ -504,11 +509,73 @@ class DayStore:
             pass  # read-only home: the page still shows what the logs have
 
 
+HIT_WINDOWS = {"five_hour": ("5h", 5), "seven_day": ("7d", 168)}  # limit type in the logs -> window key, hours
+HIT_MAX_AGE = 25 * 86400  # Claude Code deletes transcripts after 30 days: an older hit's window is no longer complete
+
+
+class HitStore:
+    """Limits learned from the rate limits you hit. When an agent is stopped by its 5-hour (or weekly) limit, the
+    tokens you used in that window came to 100%, so they make an estimate of the limit. Kept in a small JSON file,
+    so the estimate survives the agent deleting its logs. It holds only limit types, times and token counts."""
+
+    def __init__(self, path=None):
+        self.path, self.hits = path, {}
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8") as f:
+                self.hits = {t: [h for h in v if isinstance(h, dict)] for t, v in json.load(f).get("hits", {}).items()}
+        except (OSError, ValueError, AttributeError, TypeError):
+            self.hits = {}
+
+    def add(self, type_id, kind, resets_at, hit_at, tokens):
+        """Record one hit; a window seen again keeps its larger count (more of its logs may have been read)."""
+        rows = self.hits.setdefault(type_id, [])
+        row = next((h for h in rows if h.get("type") == kind and abs(h.get("resets_at", 0) - resets_at) < 60), None)
+        if row and row.get("tokens", 0) >= tokens:
+            return
+        if row:
+            row.update(tokens=tokens, hit_at=min(row.get("hit_at", hit_at), hit_at))
+        else:
+            rows.append({"type": kind, "resets_at": resets_at, "hit_at": hit_at, "tokens": tokens})
+            rows.sort(key=lambda h: h["hit_at"])
+            del rows[:-20]  # the last 20 hits are plenty
+        self._save()
+
+    def learned(self, type_id, seen=None):
+        """-> {"5h": {"tokens", "hits", "last"}, ...}: the middle of the last five hits of each kind. `seen` is the
+        most a window has held without a hit ({"5h": tokens}); a learned limit below it is out of date (a bigger
+        plan, or a count from logs that were already gone), so it is left out."""
+        out = {}
+        for kind, (key, _) in HIT_WINDOWS.items():
+            rows = [h for h in self.hits.get(type_id, []) if h.get("type") == kind][-5:]
+            if rows:
+                v = sorted(h["tokens"] for h in rows)
+                tokens = v[len(v) // 2]
+                if (seen or {}).get(key, 0) > tokens * 1.1:
+                    continue
+                out[key] = {"tokens": tokens, "hits": len(rows), "last": rows[-1]["hit_at"]}
+        return out
+
+    def _save(self):
+        if not self.path:
+            return
+        try:
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+            tmp = self.path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"version": 1, "hits": self.hits}, f, separators=(",", ":"))
+            os.replace(tmp, self.path)
+        except OSError:
+            pass
+
+
 class UsageModel:
-    def __init__(self, cfg, days_file=None):
+    def __init__(self, cfg, days_file=None, limits_file=None):
         self.cfg = cfg
         self.cache = LogCache()
         self.store = DayStore(days_file)
+        self.hit_store = HitStore(limits_file)
         self.by_type = {}
         self.summary = {}
         self.overview = {"days": {}, "models": {"7d": [], "30d": []}}
@@ -526,6 +593,26 @@ class UsageModel:
                     if st.session in imports:
                         st.imported_before = imports[st.session] + 60
         self.overview = self._overview(time.time())
+        self._learn_hits()
+
+    def _learn_hits(self):
+        """Each rate limit hit in the logs: the tokens from the window's start up to the hit make its 100%."""
+        for a in self.cfg["agents"]:
+            files = self.by_type.get(a["id"], [])
+            hits = {}
+            for f in files:
+                for k, at in f.limit_hits.items():
+                    hits[k] = min(at, hits.get(k, at))
+            if not hits:
+                continue
+            ev = [e for f in files for e in f.own_events()]
+            for (kind, resets_at), hit_at in hits.items():
+                if kind not in HIT_WINDOWS or time.time() - hit_at > HIT_MAX_AGE:
+                    continue
+                start = resets_at - HIT_WINDOWS[kind][1] * 3600
+                tokens = sum(e.fresh for e in ev if start <= e.ts <= hit_at)
+                if tokens >= 10_000:  # less means the window's logs are gone: no estimate from it
+                    self.hit_store.add(a["id"], kind, resets_at, hit_at, tokens)
 
     def _overview(self, now):
         """For the Overview page: tokens by model over 7 and 30 days, and tokens per agent type on each day (local
@@ -573,6 +660,7 @@ class UsageModel:
                  "windows": self._windows(a, files, ev, prompts, now),
                  # daily quotas (Gemini CLI, for one) reset at midnight Pacific time
                  "daily": {"end": pt_midnight(now, 1), **_counts(ev, prompts, pt_midnight(now, 0))}}
+            s["hit_limits"] = self.hit_store.learned(a["id"], seen={"5h": blk_peak, "7d": s["week"]})
             if a["id"] == "ollama":
                 s["loaded"] = ollama_models()
             s["visible"] = bool(s["running"] or s["today"] or s["week"] or s.get("loaded"))

@@ -109,8 +109,8 @@
     return el;
   }
 
-  // "Read quota": re-read the logs and the status line now; with still no official %, Python opens the agent's CLI
-  // in Windows Terminal, where one message records it. The bars then fill in on the next refresh.
+  // "Read quota": re-read the logs and the status line now, and learn from any new limit hit; the message says
+  // what there is (the official %, an estimate from a limit hit, or nothing yet). Nothing is opened.
   async function readQuota(id, btn) {
     if (!S.api || btn.disabled) return;
     btn.disabled = true; btn.textContent = "Reading…";
@@ -127,7 +127,8 @@
 
   // ------------------------------------------------------------------ plans: an estimated % where the agent reports none
   // Pick a plan per monitor: its published limits, your own (Custom), or Auto, which uses limits learned from the
-  // official readings you have had (tokens at 100%). The provider's own % always wins when it is reported.
+  // official readings you have had (tokens at 100%), else from the last rate limits you hit (Python works those out
+  // from the logs: the tokens in a window that ended in a limit hit). The provider's own % always wins.
   const loadObj = (k) => {
     try { const v = JSON.parse(store.get(k, "{}")); return v && typeof v === "object" && !Array.isArray(v) ? v : {}; } catch (e) { return {}; }
   };
@@ -161,7 +162,8 @@
     const preset = presetsOf(t).find((x) => x.id === p.choice);
     return preset ? preset.short || preset.label : "Auto";
   }
-  function limitFor(t, key) {  // your custom limit, else the chosen plan's, else one learned from official readings
+  const hitDate = (ts) => new Date(ts * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  function limitFor(t, key) {  // your custom limit, else the chosen plan's, else one learned from official readings or a limit hit
     const p = planOf(t);
     if (p.choice === "custom") {
       const c = p.custom && p.custom[key];
@@ -172,7 +174,9 @@
       if (l) return { ...l, src: "plan", plan: preset.label };
     }
     const v = key === "1d" ? null : learned(t.id, key);
-    return v ? { unit: "tokens", value: v, src: "learned" } : null;
+    if (v) return { unit: "tokens", value: v, src: "learned" };
+    const hit = (t.hit_limits || {})[key];
+    return hit ? { unit: "tokens", value: hit.tokens, src: "hit", at: hit.last, hits: hit.hits } : null;
   }
   function estimate(t, w) {  // the window with an estimated % (basis "est"), or as it was when there is nothing to go on
     if (w.basis === "official") return w;
@@ -230,9 +234,13 @@
     if (!t) return;
     const p = planOf(t), info = t.plans || { plans: [], note: "", as_of: "" };
     $("plan-title").textContent = `${t.name} plan`;
-    const learnedText = ["5h", "7d"].map((k) => [k, learned(t.id, k)]).filter(([, v]) => v).map(([k, v]) => `${k} ≈ ${fmt(v)} tokens`);
+    const learnedText = ["5h", "7d"].map((k) => {
+      const v = learned(t.id, k), hit = (t.hit_limits || {})[k];
+      return v ? `${k} ≈ ${fmt(v)} tokens` : hit ? `${k} ≈ ${fmt(hit.tokens)} tokens (limit hit ${hitDate(hit.last)})` : "";
+    }).filter(Boolean);
     const options = [
-      { id: "auto", label: "Auto", desc: learnedText.length ? `Learned: ${learnedText.join(", ")}` : "Official when reported, else learned from official readings" },
+      { id: "auto", label: "Auto", desc: learnedText.length ? `Learned: ${learnedText.join(", ")}`
+        : "Official when reported, else learned from official readings or the next limit you hit" },
       ...presetsOf(t),
       { id: "custom", label: "Custom", desc: "Your own limits" },
     ];
@@ -331,7 +339,9 @@
       const L = w.lim, unit = UNIT[L.unit] || L.unit;
       const used = L.unit === "tokens" ? fmt(w.count) : w.count.toLocaleString("en-US");
       const of = L.range ? `${L.range[0]}–${L.range[1]}` : L.unit === "tokens" ? fmt(L.value) : Number(L.value).toLocaleString("en-US");
-      const src = L.src === "learned" ? "learned from your official readings" : L.src === "custom" ? "your own limit" : `${L.plan} plan`;
+      const src = L.src === "learned" ? "learned from your official readings"
+        : L.src === "hit" ? `learned from the limit you hit on ${hitDate(L.at)}${L.hits > 1 ? ` and ${L.hits - 1} before` : ""}`
+        : L.src === "custom" ? "your own limit" : `${L.plan} plan`;
       return { text: L.range ? `${used} of ${of}` : `${pct(w.pct)} est.`, cls: w.lvl || "",
                tip: `${name} estimate (${src}): ${used} of ${L.range ? "" : "about "}${of} ${unit}${ends}` };
     }

@@ -8,7 +8,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agentboard.core import config as cfgmod  # noqa: E402
-from agentboard.core.usage import DayStore, FileState, UsageModel  # noqa: E402
+from agentboard.core.usage import DayStore, FileState, HitStore, UsageModel  # noqa: E402
 
 NOW = time.time()
 ISO = lambda t: dt.datetime.fromtimestamp(t, dt.timezone.utc).isoformat().replace("+00:00", "Z")  # noqa: E731
@@ -90,6 +90,25 @@ def main():
     free = FileState("free.jsonl", "codex", rate_ts=NOW,
                      rate_limits={"primary": {"used_percent": 3.0, "window_minutes": 43200, "resets_at": NOW + 20 * 86400}})
     free_wins = m._windows(next(a for a in cfg["agents"] if a["id"] == "codex"), [free], [], [], NOW)
+    # a rate limit hit teaches the 5h limit: the tokens from the window's start up to the hit
+    hit_at, big = NOW - 3 * 86400, {"input_tokens": 0, "cache_creation_input_tokens": 0, "output_tokens": 30000}
+    old = NOW - 40 * 86400  # too old: Claude Code has deleted most of that window's logs by now
+    write(f"{tmp}/hits/C--p/h.jsonl", [
+        {"type": "assistant", "timestamp": ISO(old - 3600), "sessionId": "h", "requestId": "o1", "message": {"id": "o1", "usage": big}},
+        {"type": "assistant", "timestamp": ISO(old), "sessionId": "h", "isApiErrorMessage": True, "message": {"id": "o2"},
+         "quotaLimits": {"status": "rejected", "resetsAt": old + 3600, "rateLimitType": "five_hour"}},
+        {"type": "assistant", "timestamp": ISO(hit_at - 7200), "sessionId": "h", "requestId": "h1", "message": {"id": "h1", "usage": big}},
+        {"type": "assistant", "timestamp": ISO(hit_at - 3600), "sessionId": "h", "requestId": "h2", "message": {"id": "h2", "usage": big}},
+        {"type": "assistant", "timestamp": ISO(hit_at), "sessionId": "h", "isApiErrorMessage": True, "message": {"id": "h3"},
+         "quotaLimits": {"status": "rejected", "resetsAt": hit_at + 3600, "rateLimitType": "five_hour"}},
+    ])
+    hit_cfg = cfgmod.load()
+    hit_cfg["agents"] = [dict(next(a for a in hit_cfg["agents"] if a["id"] == "claude"), logs=[f"{tmp}/hits/*/*.jsonl"])]
+    hm = UsageModel(hit_cfg, limits_file=f"{tmp}/limits.json")
+    hm.refresh()
+    hit_limits = hm.summarize([])["claude"]["hit_limits"]
+    with open(f"{tmp}/limits.json", encoding="utf-8") as f:
+        kept = [(h["type"], h["tokens"]) for h in json.load(f)["hits"]["claude"]]
 
     checks = [
         ("gemini fresh tokens", s["gemini"]["today"], 1350),
@@ -113,6 +132,9 @@ def main():
         ("overview: claude tokens today", m.overview["days"].get(dt.date.today().isoformat(), {}).get("claude"), 1360),
         ("day store: a stored day only grows", merged["2026-10-20"], {"claude": 500, "codex": 7}),
         ("day store: today is not saved yet", sorted(saved), ["2026-10-20"]),
+        ("limit hit: 5h learned from the window's tokens", hit_limits.get("5h", {}).get("tokens"), 60000),
+        ("limit hit: kept in limits.json, the 40-day-old hit left out", kept, [("five_hour", 60000)]),
+        ("limit hit: left out once a bigger window is seen", HitStore(f"{tmp}/limits.json").learned("claude", seen={"5h": 100_000}), {}),
         ("codex 30-day window (free plan)", [(w["label"], w["basis"], w["pct"], w.get("name")) for w in free_wins],
          [("5h", None, None, None), ("7d", None, None, None), ("30d", "official", 3.0, "30-day")]),
     ]
