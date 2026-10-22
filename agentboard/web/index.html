@@ -32,6 +32,11 @@
       <div><b class="mono" id="t-working">0</b><span>working</span></div>
       <button id="t-waiting-wrap" title="Show all agents"><b class="mono" id="t-waiting">0</b><span>need you</span></button>
     </section>
+    <div class="layout" id="layout" role="group" aria-label="Columns">
+      <button class="lbtn" data-cols="3" title="3 columns" aria-label="3 columns" aria-pressed="false" data-icon="kanban"></button>
+      <button class="lbtn" data-cols="2" title="2 columns" aria-label="2 columns" aria-pressed="false" data-icon="columns"></button>
+      <button class="lbtn" data-cols="1" title="1 column" aria-label="1 column" aria-pressed="false" data-icon="rows"></button>
+    </div>
     <span class="updated pywebview-drag-region" id="updated"></span>
   </div>
 
@@ -47,7 +52,6 @@
     </section>
   </main>
 
-  <div class="tip" id="tip" role="tooltip"></div>
   <div class="toast" id="toast" role="status" aria-live="polite"><span class="icon" id="toast-icon"></span><span id="toast-text"></span></div>
 
   <script src="vendor/icons.js"></script>

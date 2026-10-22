@@ -1,7 +1,8 @@
 "use strict";
 // AgentBoard page. Pulls a JSON snapshot from Python (window.pywebview.api) and patches the DOM in place,
-// keyed by agent type and agent process, so ring arcs animate between values instead of redrawing.
+// keyed by agent type and agent process, so bars animate between values instead of redrawing.
 // The window keeps its width; its height follows the content, so opening an agent type's details makes it taller.
+// Each page has its own column count (3, 2 or 1), set with the small buttons in the toolbar.
 (() => {
   const $ = (id) => document.getElementById(id);
   const ICON = (name) => (window.ICONS && window.ICONS[name]) || "";
@@ -10,7 +11,8 @@
     set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage blocked: keep defaults */ } },
   };
   // open: which agent type's details are shown ("all", a type id, or null). Closed on every start.
-  const S = { api: null, snap: null, lastTs: 0, page: store.get("ab.page", "usage"), open: null, maximized: false, layout: "" };
+  const S = { api: null, snap: null, lastTs: 0, page: store.get("ab.page", "usage"), open: null, maximized: false, layout: "",
+              cols: { usage: Number(store.get("ab.cols.usage", 2)) || 2, agents: Number(store.get("ab.cols.agents", 2)) || 2 } };
 
   // ------------------------------------------------------------------ formatting
   const fmt = (n) => {
@@ -40,8 +42,7 @@
   }
   const setIcon = (el, name) => { el.dataset.icon = name; paintIcons(el.parentNode || document); };
 
-  // ------------------------------------------------------------------ usage page: 5h (outer) and 7d (inner) rings
-  const R_OUT = 54, R_IN = 42, C_OUT = 2 * Math.PI * R_OUT, C_IN = 2 * Math.PI * R_IN;
+  // ------------------------------------------------------------------ usage page: a bar per window (5h, 7d, Fable, ...)
   const cards = new Map();
   const WIN_NAME = { "5h": "5-hour", "7d": "7-day" };
 
@@ -49,39 +50,24 @@
     const el = document.createElement("article");
     el.className = "card";
     el.innerHTML = `
-      <div class="ring">
-        <svg viewBox="0 0 124 124" aria-hidden="true">
-          <circle class="track" cx="62" cy="62" r="${R_OUT}" stroke-width="9"></circle>
-          <circle class="track" cx="62" cy="62" r="${R_IN}" stroke-width="4"></circle>
-          <circle class="arc outer" cx="62" cy="62" r="${R_OUT}" stroke-width="9" stroke-dasharray="${C_OUT}" stroke-dashoffset="${C_OUT}"></circle>
-          <circle class="arc inner" cx="62" cy="62" r="${R_IN}" stroke-width="4" stroke-dasharray="${C_IN}" stroke-dashoffset="${C_IN}"></circle>
-          <circle class="hit" data-win="5h" cx="62" cy="62" r="${R_OUT}" stroke-width="16"></circle>
-          <circle class="hit" data-win="7d" cx="62" cy="62" r="${R_IN}" stroke-width="9"></circle>
-        </svg>
-        <div class="ring-center"><b class="mono"></b><span>5h tokens</span></div>
-      </div>
-      <div class="info">
-        <div class="head"><h3></h3><span class="run"></span></div>
-        <div class="win w5"><i class="key"></i><span class="k">5h</span><b class="tok mono"></b><span class="pct"></span></div>
-        <div class="win w7"><i class="key"></i><span class="k">7d</span><b class="tok mono"></b><span class="pct"></span></div>
-        <div class="note"></div>
-        <div class="meta"></div>
-      </div>`;
-    el.querySelectorAll(".hit").forEach((h) => {
-      h.addEventListener("mousemove", (e) => showTip(e, el._tips && el._tips[h.dataset.win]));
-      h.addEventListener("mouseleave", hideTip);
-    });
+      <div class="head"><i class="tdot"></i><h3></h3><span class="run"></span></div>
+      <div class="bars"></div>
+      <div class="note"></div>
+      <div class="meta"></div>`;
     return el;
   }
 
-  function setArc(arc, circumference, p) {
-    arc.style.strokeDashoffset = String(circumference * (1 - clamp(p) / 100));
-    arc.style.opacity = clamp(p) > 0.4 ? "1" : "0";
+  function makeBar() {
+    const row = document.createElement("div");
+    row.className = "brow";
+    row.innerHTML = `<div class="btop"><span class="k"></span><b class="tok mono"></b><span class="pct"></span></div>` +
+                    `<div class="bar"><i></i></div>`;
+    return row;
   }
 
   // What one window line says, and its longer hover text.
   function describeWin(w, local) {
-    const name = WIN_NAME[w.key] || w.key, tok = `${fmt(w.tokens)} tokens`;
+    const name = WIN_NAME[w.key] || `${w.label || w.key} weekly`, tok = `${fmt(w.tokens)} tokens`;
     const ends = w.end ? `, resets in ${until(w.end)}` : "";
     if (w.basis === "official") {
       return { text: `${pct(w.pct)} used`, cls: level(w.pct),
@@ -97,6 +83,7 @@
                tip: busiest ? `${name}: ${tok}, your busiest ${name} window in 4 weeks${ends}`
                             : `${name}: ${tok}, ${pct(w.pct)} of your busiest (${fmt(w.ref)})${ends}` };
     }
+    if (!w.tokens) return { text: "not used", cls: "muted", tip: `${name}: no tokens in this window` };
     return { text: local ? "no limit" : "", cls: "", tip: `${name}: ${tok}` };
   }
 
@@ -104,24 +91,26 @@
     el.style.setProperty("--c", t.color);
     el.querySelector("h3").textContent = t.name;
     el.querySelector(".run").textContent = t.running ? `${t.running} running` : t.local ? "local" : "not running";
-    const byKey = Object.fromEntries((t.windows || []).map((w) => [w.key, w]));
-    const w5 = byKey["5h"] || { key: "5h", tokens: 0 }, w7 = byKey["7d"] || { key: "7d", tokens: 0 };
-    el.querySelector(".ring-center b").textContent = fmt(w5.tokens);
-    setArc(el.querySelector(".arc.outer"), C_OUT, w5.pct);
-    setArc(el.querySelector(".arc.inner"), C_IN, w7.pct);
-    el._tips = {};
-    for (const [w, row] of [[w5, el.querySelector(".w5")], [w7, el.querySelector(".w7")]]) {
-      const d = describeWin(w, t.quota_kind === "unlimited");
+    const wins = t.windows || [];
+    const box = el.querySelector(".bars");
+    while (box.children.length < wins.length) box.appendChild(makeBar());
+    while (box.children.length > wins.length) box.lastChild.remove();
+    wins.forEach((w, i) => {
+      const row = box.children[i], d = describeWin(w, t.quota_kind === "unlimited");
+      row.querySelector(".k").textContent = w.label || w.key;
       row.querySelector(".tok").textContent = fmt(w.tokens);
       const p = row.querySelector(".pct");
       p.textContent = d.text; p.className = `pct ${d.cls}`;
+      const bar = row.querySelector(".bar");
+      bar.className = `bar ${w.basis === "peak" ? "peak" : d.cls === "muted" ? "" : d.cls}`;
+      bar.firstChild.style.width = `${clamp(w.pct)}%`;
       row.title = d.tip;
-      el._tips[w.key] = d.tip;
-    }
+    });
     // when the windows reset: the official reset times, or when the current 5-hour block ends
-    const official = [w5, w7].filter((w) => w.end && w.basis === "official");
+    const w5 = wins.find((w) => w.key === "5h") || {};
+    const official = wins.filter((w) => w.end && w.basis === "official");
     el.querySelector(".note").textContent = official.length
-      ? "resets " + official.map((w) => `${w.key} ${until(w.end)}`).join(" · ")
+      ? "resets " + official.map((w) => `${w.label || w.key} ${until(w.end)}`).join(" · ")
       : w5.end ? `5h block ends in ${until(w5.end)}` : "";
     const meta = [`today <b class="mono">${fmt(t.today)}</b>`];
     if (t.today_cache) meta.push(`cache <b class="mono">${fmt(t.today_cache)}</b>`);
@@ -207,7 +196,7 @@
     lbl.lastChild.textContent = where.length ? ` · ${where.join(" · ")}` : "";
     b.querySelector(".tok").textContent = fmt(a.tokens);
     const since = b.querySelector(".since");
-    since.textContent = a.status === "approval" ? "Needs approval" : a.status === "working" ? "working now" : a.since || "";
+    since.textContent = a.status === "approval" ? "approve?" : a.status === "working" ? "working" : a.since || "";
     since.className = `since${a.status === "approval" ? " approval" : ""}`;
     const extra = [a.model, a.folder && `folder ${a.folder}`, `pid ${a.pid}`].filter(Boolean).join(" · ");
     b.title = `${a.name}\n${a.surface}\n${extra}\nClick to open it`;
@@ -305,7 +294,8 @@
   }
   // Refit only when something that changes the height changed, not on every refresh.
   function checkLayout() {
-    const sig = [S.page, S.open, cards.size, tiles.size, $("detail").querySelectorAll(".agent").length, $("banner").hidden].join("|");
+    const sig = [S.page, S.open, S.cols[S.page], cards.size, tiles.size, $("detail").querySelectorAll(".agent").length,
+                 $("banner").hidden].join("|");
     if (sig !== S.layout) { S.layout = sig; fitSoon(); }
   }
 
@@ -321,21 +311,9 @@
 
   function renderSkeleton() {
     $("cards").innerHTML = [0, 1].map(() =>
-      `<div class="card sk-card"><div class="sk sk-ring"></div><div class="sk-lines">` +
-      `<div class="sk sk-line" style="width:55%"></div><div class="sk sk-line" style="width:90%"></div>` +
-      `<div class="sk sk-line" style="width:80%"></div><div class="sk sk-line" style="width:60%"></div></div></div>`).join("");
+      `<div class="card sk-card"><div class="sk sk-line" style="width:45%"></div>` +
+      `<div class="sk sk-bar"></div><div class="sk sk-bar"></div><div class="sk sk-line" style="width:70%"></div></div>`).join("");
   }
-
-  const tip = $("tip");
-  function showTip(e, text) {
-    if (!text) return hideTip();
-    tip.textContent = text;
-    const w = tip.offsetWidth;
-    tip.style.left = `${Math.min(window.innerWidth - w - 8, Math.max(8, e.clientX - w / 2))}px`;
-    tip.style.top = `${e.clientY - 36}px`;
-    tip.classList.add("show");
-  }
-  function hideTip() { tip.classList.remove("show"); }
 
   let toastTimer = 0;
   function toast(text, ok = true) {
@@ -384,6 +362,21 @@
       $(`tab-${p}`).setAttribute("aria-selected", String(p === page));
       $(`page-${p}`).hidden = p !== page;
     }
+    syncCols();
+    checkLayout();
+  }
+
+  // ------------------------------------------------------------------ column switch (per page)
+  function syncCols() {
+    for (const p of ["usage", "agents"]) {
+      $(`page-${p}`).style.setProperty("--cols", S.cols[p]);
+      $(`page-${p}`).dataset.cols = S.cols[p];
+    }
+    document.querySelectorAll("#layout .lbtn").forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.cols) === S.cols[S.page])));
+  }
+  function setCols(n, page = S.page) {
+    S.cols[page] = n; store.set(`ab.cols.${page}`, n);
+    syncCols();
     checkLayout();
   }
 
@@ -416,7 +409,7 @@
     syncMaxIcon();
     if (!S.maximized) fitSoon();
   }
-  window.agentboard = { showPage, setTheme, openFold, toggleMax };  // handy from devtools and the screenshot script
+  window.agentboard = { showPage, setTheme, openFold, toggleMax, setCols };  // handy from devtools and the screenshot script
 
   function wire() {
     paintIcons();
@@ -438,6 +431,7 @@
     $("btn-settings").addEventListener("click", async () => { if (S.api) toast(await S.api.open_settings()); });
     $("btn-min").addEventListener("click", () => S.api && S.api.minimize());
     $("btn-max").addEventListener("click", toggleMax);
+    document.querySelectorAll("#layout .lbtn").forEach((b) => b.addEventListener("click", () => setCols(Number(b.dataset.cols))));
     $("btn-close").addEventListener("click", () => S.api && S.api.close());
     $("titlebar").addEventListener("dblclick", (e) => { if (!e.target.closest("button")) toggleMax(); });
     document.addEventListener("keydown", (e) => {

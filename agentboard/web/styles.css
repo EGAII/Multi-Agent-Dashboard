@@ -147,47 +147,44 @@ main { flex: 1; overflow-y: auto; padding: 0 16px 16px; scrollbar-width: thin; s
 .banner .icon { color: var(--crit); margin-top: 1px; }
 .banner[hidden] { display: none; }
 
-/* ------------------------------------------------------------------ usage page: one card per agent type, side by side */
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; }
+/* column switch: 3, 2 or 1 columns, chosen per page (--cols is set on each page) */
+.layout { display: inline-grid; grid-auto-flow: column; gap: 2px; padding: 3px; margin-left: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; }
+.lbtn { width: 28px; height: 26px; border-radius: 999px; display: grid; place-items: center; color: var(--ink-3); transition: background-color 140ms, color 140ms; }
+.lbtn .icon { width: 15px; height: 15px; }
+.lbtn:hover { color: var(--ink); }
+.lbtn[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.layout + .updated { margin-left: 4px; }
+
+/* ------------------------------------------------------------------ usage page: one card per agent type, a bar per window */
+.cards { display: grid; grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); gap: 12px; }
 .card {
-  display: grid; grid-template-columns: 124px minmax(0, 1fr); gap: 18px; align-items: center;
+  display: flex; flex-direction: column; gap: 12px; min-width: 0;  /* cards in a row share a height; meta sits at the bottom */
   padding: 16px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow);
 }
-.ring { position: relative; width: 124px; height: 124px; }
-.ring svg { width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
-.ring .track { fill: none; stroke: var(--track); }
-.ring .arc { fill: none; stroke: var(--c); stroke-linecap: round; transition: stroke-dashoffset 700ms cubic-bezier(0.22, 1, 0.36, 1), opacity 300ms; }
-.ring .arc.inner { stroke: color-mix(in srgb, var(--c) 55%, var(--surface)); }
-.ring .hit { fill: none; stroke: transparent; pointer-events: stroke; }
-.ring-center { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; pointer-events: none; }
-.ring-center b { font-size: 20px; font-weight: 600; line-height: 1.1; }
-.ring-center span { color: var(--ink-3); font-size: 11px; }
-
-.info { display: grid; gap: 6px; min-width: 0; }
-.head { display: flex; align-items: baseline; gap: 8px; min-width: 0; margin-bottom: 2px; }
+.head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.head .tdot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); flex: none; }
 .head h3 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .head .run { margin-left: auto; color: var(--ink-3); font-size: 11.5px; white-space: nowrap; }
-.win { display: grid; grid-template-columns: 10px 20px auto minmax(0, 1fr); align-items: center; gap: 8px; font-size: 12.5px; }
-.win .key { width: 10px; height: 4px; border-radius: 999px; background: var(--c); }
-.win.w7 .key { background: color-mix(in srgb, var(--c) 55%, var(--surface)); }
-.win .k { color: var(--ink-3); }
-.win .tok { font-weight: 600; font-size: 13.5px; }
-.win .pct { color: var(--ink-2); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.win .pct.warn { color: var(--warn); font-weight: 500; }
-.win .pct.crit { color: var(--crit); font-weight: 500; }
-.note { min-height: 17px; color: var(--ink-3); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.meta { margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bars { display: grid; gap: 11px; }
+.brow { display: grid; gap: 5px; min-width: 0; }
+.btop { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; min-width: 0; }
+.btop .k { color: var(--ink-3); min-width: 38px; }
+.btop .tok { font-weight: 600; font-size: 13.5px; }
+.btop .pct { margin-left: auto; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.btop .pct.warn { color: var(--warn); font-weight: 500; }
+.btop .pct.crit { color: var(--crit); font-weight: 500; }
+.btop .pct.muted { color: var(--ink-3); }
+.bar { height: 8px; border-radius: 999px; background: var(--track); overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--c); transition: width 700ms cubic-bezier(0.22, 1, 0.36, 1); }
+.bar.peak i { background: color-mix(in srgb, var(--c) 50%, var(--surface)); }  /* relative to your busiest, not a limit */
+.bar.warn i { background: var(--warn); }
+.bar.crit i { background: var(--crit); }
+.note { min-height: 17px; color: var(--ink-3); font-size: 11.5px; }
+.meta { margin-top: auto; padding-top: 9px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .meta b { color: var(--ink-2); font-weight: 500; }
 
-.tip {
-  position: fixed; z-index: 20; pointer-events: none; padding: 6px 10px; border-radius: 999px; max-width: calc(100% - 16px);
-  background: var(--toast-bg); color: var(--toast-ink); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  opacity: 0; transition: opacity 120ms;
-}
-.tip.show { opacity: 1; }
-
 /* ------------------------------------------------------------------ agents page: type tiles in a row, details below */
-.types { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.types { display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: 12px; }
 .type {
   display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; grid-template-rows: auto auto; column-gap: 8px; row-gap: 4px; align-items: center;
   padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow);
@@ -212,7 +209,7 @@ main { flex: 1; overflow-y: auto; padding: 0 16px 16px; scrollbar-width: thin; s
 /* the agent list is always exactly five rows tall; more agents scroll inside it */
 .detail { --row-h: 58px; }
 .detail-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); grid-auto-rows: var(--row-h); align-content: start;
+  display: grid; grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); grid-auto-rows: var(--row-h); align-content: start;
   height: calc(5 * var(--row-h)); overflow-y: auto; overscroll-behavior: contain; margin-right: -1px;
   scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent;
 }
@@ -249,6 +246,10 @@ main { flex: 1; overflow-y: auto; padding: 0 16px 16px; scrollbar-width: thin; s
 .side .tok { font-size: 12.5px; font-weight: 500; }
 .side .since { color: var(--ink-3); font-size: 11px; white-space: nowrap; }
 .side .since.approval { color: var(--crit); font-weight: 500; }
+/* three agents per row: a smaller mark and no jump arrow, so names keep more room */
+[data-cols="3"] .agent { grid-template-columns: 28px minmax(0, 1fr) auto; gap: 8px; padding: 0 10px; }
+[data-cols="3"] .mark { width: 28px; height: 28px; font-size: 11px; }
+[data-cols="3"] .go { display: none; }
 .go { color: var(--ink-3); opacity: 0; transform: translate(-3px, 3px); transition: opacity 140ms, transform 160ms; }
 .go .icon { width: 14px; height: 14px; }
 .agent:hover .go, .agent:focus-visible .go { opacity: 1; transform: none; color: var(--ink); }
@@ -260,9 +261,8 @@ main { flex: 1; overflow-y: auto; padding: 0 16px 16px; scrollbar-width: thin; s
 .empty p { margin: 0; max-width: 46ch; font-size: 12px; line-height: 1.5; }
 
 .sk { background: linear-gradient(90deg, var(--skeleton) 0%, var(--skeleton-hi) 50%, var(--skeleton) 100%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; border-radius: 999px; }
-.sk-ring { width: 124px; height: 124px; border-radius: 50%; -webkit-mask: radial-gradient(circle, transparent 52px, #000 53px); mask: radial-gradient(circle, transparent 52px, #000 53px); }
-.sk-lines { display: grid; gap: 10px; }
 .sk-line { height: 10px; }
+.sk-bar { height: 8px; }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
 .toast {

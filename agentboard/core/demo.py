@@ -14,6 +14,8 @@ TYPES = [
     ("ollama", "Ollama", "#64748b", True, 1, 0, 0, 310_000, 0, 0, "unlimited",
      (120_000, 31, "peak", 95), (1_480_000, 100, "peak", None)),
 ]
+# per-model weekly windows: key, label, (tokens, %, basis, minutes to reset)
+MODEL_WINDOWS = {"claude": [("fable", "Fable", (3_150_000, 46, "official", 4 * 1440 + 60))]}
 AGENTS = [
     # type, name, status, since, surface kind, surface, tokens, model
     ("claude", "Migrate billing to the v2 API", "approval", "1m ago", "cli", "Claude Code CLI · Windows Terminal", 1_240_000, "claude-opus-5-5"),
@@ -58,9 +60,9 @@ class DemoEngine:
         types = []
         for tid, name, color, local, running, working, waiting, today, cache, reqs, kind, w5, w7 in TYPES:
             windows = []
-            for key, (tokens, pct, basis, mins) in (("5h", w5), ("7d", w7)):
-                windows.append({"key": key, "tokens": int(tokens * grow), "pct": min(100, pct * grow), "basis": basis,
-                                "end": now + mins * 60 if mins else None, "ref": int(tokens * 100 / pct)})
+            for key, label, (tokens, pct, basis, mins) in [("5h", "5h", w5), ("7d", "7d", w7)] + MODEL_WINDOWS.get(tid, []):
+                windows.append({"key": key, "label": label, "tokens": int(tokens * grow), "pct": min(100, pct * grow),
+                                "basis": basis, "end": now + mins * 60 if mins else None, "ref": int(tokens * 100 / pct)})
             types.append({"id": tid, "name": name, "color": color, "local": local, "running": running, "working": working,
                           "waiting": waiting, "today": int(today * grow), "today_cache": cache, "requests_today": reqs,
                           "week": w7[0], "models": [], "windows": windows, "loaded": ["qwen3:8b"] if local else None,

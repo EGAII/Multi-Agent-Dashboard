@@ -13,7 +13,10 @@ Readers: claude, codex, gemini, opencode, generic (any JSON/JSONL with token fie
 Quota kinds:
   from_log       official limits recorded by the agent itself (Codex rate_limits, Claude statusline)
   tokens_window  your own token budget per rolling window: {"limit_tokens": 2000000, "window_hours": 5}
-                 plus, optionally, per 7 days: {"limit_tokens_7d": 30000000}
+                 plus, optionally, per 7 days: {"limit_tokens_7d": 30000000}, and per model window:
+                 {"limit_tokens_fable": 10000000}
+model_windows    extra weekly bars for one model family: [{"key": "fable", "label": "Fable", "match": "fable"}]
+                 ("match" is a case-insensitive part of the model id)
   requests_day   your own request budget per day: {"limit_requests": 1000}
   unlimited      local models
   none           show tokens only
@@ -35,7 +38,9 @@ DEFAULT_CONFIG = {
         {"id": "claude", "name": "Claude Code", "color": "#d97757",
          "match": {"exe": ["claude.exe", "claude"], "cmd_regex": r"@anthropic-ai[\\/]claude-code"},
          "reader": "claude", "logs": ["~/.claude/projects/*/*.jsonl"],
-         "quota": {"kind": "from_log", "fallback": {"kind": "tokens_window", "window_hours": 5, "limit_tokens": None}}},
+         "quota": {"kind": "from_log", "fallback": {"kind": "tokens_window", "window_hours": 5, "limit_tokens": None}},
+         # Claude plans also meter some models per week on their own; this one gets its own bar
+         "model_windows": [{"key": "fable", "label": "Fable", "match": "fable"}]},
         {"id": "codex", "name": "Codex", "color": "#10a37f",
          "match": {"exe": ["codex.exe", "codex"], "cmd_regex": r"@openai[\\/]codex"},
          "reader": "codex", "logs": ["~/.codex/sessions/**/*.jsonl"],
@@ -104,7 +109,7 @@ def write_example():
         example = {
             "always_on_top": True,
             "agents": [
-                {"id": "claude", "quota": {"fallback": {"limit_tokens": None, "limit_tokens_7d": None}}},
+                {"id": "claude", "quota": {"fallback": {"limit_tokens": None, "limit_tokens_7d": None, "limit_tokens_fable": None}}},
                 {"id": "gemini", "quota": {"limit_requests": None}},
                 {"id": "my-local-agent", "name": "My local agent", "color": "#0ea5e9", "local": True,
                  "match": {"cmd_regex": r"\bmy-local-agent\b"}, "reader": "generic",

@@ -2,7 +2,8 @@
 
 A landscape, always-on-top Windows panel for all your coding agents.
 
-- **Usage page**: one card per agent type, side by side, showing the tokens used in the 5-hour window and in the last 7 days as two rings.
+- **Usage page**: one card per agent type, with a bar for each limit window: the 5-hour window, the last 7 days and, for Claude, Fable's own weekly window.
+- **Columns**: small buttons in the toolbar lay out either page in 3, 2 or 1 columns.
 - **Agents page**: a tile for **All agents** and one for each agent type. Click a tile to show its agents below in a five-row scrolling list; the window grows to fit it. Each agent shows its status and where it runs: Claude Code CLI in Windows Terminal, the Claude desktop app, Codex CLI, Codex in a VS Code terminal, and so on.
 - **Click an agent** to open it exactly where it runs:
   - a Claude desktop session opens in the Claude app;
@@ -10,11 +11,11 @@ A landscape, always-on-top Windows panel for all your coding agents.
 
 It works with Claude Code, Codex, Gemini CLI, Grok, Qwen Code, opencode, Aider and local models (Ollama). You can add any other CLI agent in the settings file.
 
-![Usage page: one card per agent type with 5h and 7d rings](docs/usage-light.png)
+![Usage page in 2 columns: a card per agent type with 5h, 7d and Fable bars](docs/usage-light.png)
 
-| Agents, tiles only | Agents, All agents open (dark) |
-| --- | --- |
-| ![Agents page with a tile per agent type](docs/agents-folded-light.png) | ![Agents page with every agent listed in a five-row scrolling panel](docs/agents-dark.png) |
+| Agents, tiles only | Agents in 3 columns, All agents open | Agents, Claude Code open (dark) |
+| --- | --- | --- |
+| ![Agents page with a tile per agent type](docs/agents-folded-light.png) | ![Every agent listed three per row in a five-row scrolling panel](docs/agents-light.png) | ![Claude Code's agents listed two per row](docs/agents-dark.png) |
 
 These screenshots use the built-in demo data (`--demo`), so the names are made up.
 
@@ -33,6 +34,8 @@ In the title bar:
 - the gear opens the settings file;
 - minimise, maximise and close. Maximise fills the screen the window is on, above the taskbar, and the cards spread into one row. Click it again, or double-click the title bar, to go back.
 
+Under the title bar, the three small buttons on the right set the columns: 3, 2 or 1. Each page keeps its own choice, and on the Agents page it applies to both the tiles and the agent list.
+
 Press **Ctrl+1** for the Usage page and **Ctrl+2** for the Agents page. Drag the bare title bar to move the window.
 
 Other ways to run it:
@@ -43,25 +46,29 @@ Other ways to run it:
 | `python -m agentboard --once` | Prints one text snapshot, to check your setup. |
 | `python -m agentboard --tabs` | Lists the Windows Terminal tabs the app can see. |
 
-## Usage page: 5-hour and 7-day rings
+## Usage page: 5-hour, 7-day and Fable bars
 
-There is one card per agent type that is running now or was used recently.
-- **Outer ring and `5h` line**: tokens used in the current 5-hour window. The same number is in the middle of the ring.
-- **Inner ring and `7d` line**: tokens used in the last 7 days.
-- **Next line**: when the windows reset (`resets 5h 2h 14m · 7d 3d 3h`), or, without official limits, when the current 5-hour block ends.
+There is one card per agent type that is running now or was used recently. Each bar shows the tokens used in one window, and how full that window is:
+- **`5h`**: the current 5-hour window.
+- **`7d`**: the last 7 days.
+- **`Fable`** (Claude only): tokens used with Claude Fable models in the last 7 days. Claude plans meter Fable on a weekly limit of its own.
+- **Next line**: when the windows reset (`resets 5h 2h 14m · 7d 3d 3h · Fable 4d 1h`), or, without official limits, when the current 5-hour block ends.
 - **Bottom line**: today's tokens, cache reads, and, where relevant, requests or loaded local models.
 
-The percentage next to each line says how full that window is. Where the figure comes from depends on what is available:
+Where the percentage comes from depends on what is available:
 
 | Shown as | When | Meaning |
 | --- | --- | --- |
 | `42% used` | The CLI reports its own limits: Codex in its logs, and Claude Code once you enable the optional status line (see below). | The official percentage of your 5-hour or weekly limit. Tokens are counted over the same window. |
-| `42% of 3.0M` | You set your own limits in the settings file (`limit_tokens` for 5 hours, `limit_tokens_7d` for 7 days). | Tokens against your own limit. |
-| `72% of peak`, or `busiest` | Neither of the above | Tokens compared with your busiest 5-hour or 7-day window in the last 4 weeks. `busiest` means this window is the busiest so far. |
+| `42% of 3.0M` | You set your own limits in the settings file (`limit_tokens` for 5 hours, `limit_tokens_7d` for 7 days, `limit_tokens_fable` for Fable). | Tokens against your own limit. |
+| `72% of peak`, or `busiest` | Neither of the above | Tokens compared with your busiest such window in the last 4 weeks. `busiest` means this window is the busiest so far. These bars are drawn lighter, because they are not a limit. |
+| `not used` | No tokens in that window | |
+
+For Fable, Claude Code shows the official weekly percentage on its `/usage` screen, but doesn't pass it to the status line yet. Until it does, the Fable bar compares with your own limit or your busiest Fable week. AgentBoard already reads the field Claude Code uses for per-model windows (`model_scoped`), so the bar switches to the official figure once the status line includes it.
 
 Claude's limits are per account, so one Claude Code CLI session with the status line enabled is enough. Its percentages then cover your desktop app sessions too. The figures are kept for up to 6 hours after the last CLI update.
 
-A percentage turns amber at 80% and red at 95%, but only for official limits and your own limits. Hover over a ring or a line to see the details.
+A bar and its percentage turn amber at 80% and red at 95%, but only for official limits and your own limits. Hover over a bar to see the details.
 
 "Tokens" means new input (including cache writes) plus output. Cache reads, meaning reused context, are shown separately, because they are much larger and cheaper. Anthropic and OpenAI don't publish their limits in tokens, so the token counts are a guide. The official percentage is the real measure.
 
@@ -69,7 +76,7 @@ A percentage turns amber at 80% and red at 95%, but only for official limits and
 
 The page starts with tiles only: one for **All agents** and one for each agent type. Each tile shows its agent count, and how many need approval (red), are waiting for your turn (amber) and are working (green).
 
-Click a tile to list its agents below the tiles, and the window grows to fit the list. The list is always five rows tall, two agents per row; any more scroll inside it. Click the tile again to hide the list, and the window shrinks back. Only one tile is open at a time. Each agent shows:
+Click a tile to list its agents below the tiles, and the window grows to fit the list. The list is always five rows tall, with 3, 2 or 1 agents per row depending on the column setting; any more scroll inside it. Click the tile again to hide the list, and the window shrinks back. Only one tile is open at a time. Each agent shows:
 - the session title;
 - a status dot:
   - red: it stopped on a tool call, probably waiting for approval;
@@ -137,7 +144,7 @@ Click the gear. This creates and opens `%USERPROFILE%\.agentboard\config.json`. 
 - **To change a built-in agent**, give its `id`. For example, to set your own Claude token limits per 5 hours and per 7 days, and a Gemini daily request budget:
 
 ```json
-{"agents": [{"id": "claude", "quota": {"fallback": {"limit_tokens": 3000000, "limit_tokens_7d": 30000000}}},
+{"agents": [{"id": "claude", "quota": {"fallback": {"limit_tokens": 3000000, "limit_tokens_7d": 30000000, "limit_tokens_fable": 10000000}}},
             {"id": "gemini", "quota": {"limit_requests": 1000}},
             {"id": "grok", "logs": ["D:/somewhere/grok-sessions/**/*.jsonl"]}]}
 ```
@@ -165,7 +172,7 @@ Claude Code passes its 5-hour and 7-day usage to the status-line command. To let
 
 Claude Code includes the 5h and 7d figures once it has had a reply from the API, so they appear after your next message in a CLI session.
 
-Your status line will then read like `Opus · 5h 42% · 7d 12%`, and the Claude rings switch to the official 5h and 7d limits. Sessions inside the Claude desktop app don't run a status line, but because the limits are per account, one CLI session is enough to show them.
+Your status line will then read like `Opus · 5h 42% · 7d 12%`, and the Claude 5h and 7d bars switch to the official limits. Sessions inside the Claude desktop app don't run a status line, but because the limits are per account, one CLI session is enough to show them.
 
 The command must point at a folder that stays put. If the file moves, the status line just stays empty.
 
@@ -182,13 +189,14 @@ The window's page is served from a local web server that only this PC can reach.
 
 ## Known limits
 
-- **Official Claude limits need a CLI session.** Claude doesn't store the 5h and 7d percentages on disk for desktop app sessions, so without a Claude Code CLI session with the status line, the rings compare with your own limits or your busiest window.
+- **The official Fable percentage isn't available yet.** Claude Code shows it only on its `/usage` screen, so the Fable bar uses your own limit or your busiest Fable week (see the Usage page section).
+- **Official Claude limits need a CLI session.** Claude doesn't store the 5h and 7d percentages on disk for desktop app sessions, so without a Claude Code CLI session with the status line, the bars compare with your own limits or your busiest window.
 - **The Claude session link** is the app's own, but it isn't documented, so a future app version could change it. If it stops working, the click still brings the app to the front.
-- **Codex inside the ChatGPT app** runs as one background process for all its threads, so it appears as one agent, and a click only brings the app to the front. History that Codex imported from other agents is not counted as Codex usage. On the test PC, Codex logged no rate limits, so its rings compare with its busiest window.
+- **Codex inside the ChatGPT app** runs as one background process for all its threads, so it appears as one agent, and a click only brings the app to the front. History that Codex imported from other agents is not counted as Codex usage. On the test PC, Codex logged no rate limits, so its bars compare with its busiest window.
 - **Not tested live**: Gemini CLI, Grok, Qwen Code and opencode weren't installed on the test PC. Their log readers are tested with sample logs in each tool's format (`tests/test_readers.py`).
 - **Exact tab jump** was tested with stand-in agents, not with live Claude Code or Codex CLI tabs. It relies on the same console-title mechanism those CLIs use.
 - **Ollama** doesn't log tokens per request. Local tokens appear only when the agent using Ollama logs them, as opencode does.
-- **Status is inferred from logs.** "Needs approval" means the agent stopped on a tool call with no activity for 45 seconds, which is usually an approval prompt. A long, silent command can look the same.
+- **Status is inferred from logs.** "approve?" (needs approval) means the agent stopped on a tool call with no activity for 45 seconds, which is usually an approval prompt. A long, silent command can look the same.
 
 ## Files
 
@@ -199,7 +207,7 @@ agentboard/web/                  the page: index.html, styles.css, app.js
 agentboard/web/vendor/           Geist fonts and Phosphor icons (both open licences), stored locally
 agentboard/core/engine.py        refresh loop and the snapshot the page draws
 agentboard/core/procs.py         finds agent processes, their host and their surface label
-agentboard/core/usage.py         reads logs: tokens, limits, 5h and 7d windows, session status
+agentboard/core/usage.py         reads logs: tokens, limits, 5h, 7d and per-model windows, session status
 agentboard/core/focus.py         jump to the window, the exact Windows Terminal tab or Claude app session
 agentboard/core/claude_app.py    Claude app session records and its session link
 agentboard/core/console_probe.py reads or temporarily marks a console's title

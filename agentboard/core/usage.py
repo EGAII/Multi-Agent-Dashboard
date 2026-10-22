@@ -342,6 +342,20 @@ def week_peak(events, now, days):
     return max(cum[bisect.bisect_left(ts, end)] - cum[bisect.bisect_left(ts, end - 7 * 86400)] for end in ends)
 
 
+def _with_basis(w, official, limit, peak):
+    """Fill in a window's percentage and where it comes from: official > your limit > your busiest window."""
+    w.update(basis=None, pct=None, ref=None)
+    if official:
+        w.update(basis="official", pct=official["pct"])
+    elif limit:
+        w.update(basis="limit", pct=100 * w["tokens"] / limit, ref=limit)
+    else:
+        p = peak()
+        if p:
+            w.update(basis="peak", pct=100 * w["tokens"] / p, ref=p)
+    return w
+
+
 def read_statusline_limits(max_age=6 * 3600):
     """Rate-limit data captured by hooks/claude_statusline.py (optional; see README)."""
     best = None
@@ -385,6 +399,12 @@ def official_windows(rate_limits, ref_ts):
         if w:
             m = w.get("window_minutes")
             w["label"] = label or (f"{int(m) // 60}h" if m and m < 1440 else f"{int(m) // 1440}d" if m else key)
+            out.append(w)
+    # per-model weekly windows, e.g. {"display_name": "Fable", "utilization": .., "resets_at": ..} (Claude Code)
+    for item in rate_limits.get("model_scoped") or []:
+        w = _window_from(item, ref_ts)
+        if w and isinstance(item, dict) and item.get("display_name"):
+            w.update(label=item["display_name"], scoped=True)
             out.append(w)
     return out
 
@@ -484,15 +504,20 @@ class UsageModel:
         return []
 
     def _windows(self, a, files, ev, now):
-        """Tokens used in the 5-hour and 7-day windows, each with a percentage: the provider's own figure when one
-        is reported, else against your own limit from the settings, else against your busiest such window."""
-        official = {}
+        """Tokens used in the 5-hour and 7-day windows, plus any per-model weekly windows the agent type defines
+        ("model_windows", e.g. Fable for Claude). Each gets a percentage: the provider's own figure when one is
+        reported, else against your own limit from the settings, else against your busiest such window."""
+        official, scoped = {}, []
         for w in self._official(a, files):
-            if w["label"] in ("5h", "7d") and not (w.get("reset") and w["reset"] < now):  # a passed reset is stale
+            if w.get("reset") and w["reset"] < now:  # a passed reset is stale
+                continue
+            if w.get("scoped"):
+                scoped.append(w)
+            elif w["label"] in ("5h", "7d"):
                 official.setdefault(w["label"], w)
         q = a.get("quota") or {}
         fb = q.get("fallback") or q
-        limits = {"5h": fb.get("limit_tokens"), "7d": fb.get("limit_tokens_7d")}
+        days = self.cfg.get("history_days", 29)
         out = []
         for key, hours in (("5h", 5), ("7d", 168)):
             o = official.get(key)
@@ -502,16 +527,17 @@ class UsageModel:
                 tokens, end, _ = five_hour_block(ev, now)
             else:
                 tokens, end = sum(e.fresh for e in ev if e.ts >= now - 7 * 86400), None
-            w = {"key": key, "tokens": tokens, "end": end, "basis": None, "pct": None, "ref": None}
-            if o:
-                w.update(basis="official", pct=o["pct"])
-            elif limits[key]:
-                w.update(basis="limit", pct=100 * tokens / limits[key], ref=limits[key])
-            else:
-                peak = five_hour_block(ev, now)[2] if key == "5h" else week_peak(ev, now, self.cfg.get("history_days", 29))
-                if peak:
-                    w.update(basis="peak", pct=100 * tokens / peak, ref=peak)
-            out.append(w)
+            limit = fb.get("limit_tokens" if key == "5h" else "limit_tokens_7d")
+            peak = lambda k=key: five_hour_block(ev, now)[2] if k == "5h" else week_peak(ev, now, days)  # noqa: E731
+            out.append(_with_basis({"key": key, "label": key, "tokens": tokens, "end": end}, o, limit, peak))
+        for mw in a.get("model_windows", []):
+            pat = mw["match"].lower()
+            mev = [e for e in ev if pat in (e.model or "").lower()]
+            o = next((w for w in scoped if pat in w["label"].lower()), None)
+            start = o["reset"] - 7 * 86400 if o and o.get("reset") else now - 7 * 86400
+            w = {"key": mw["key"], "label": mw.get("label", mw["key"]), "tokens": sum(e.fresh for e in mev if e.ts >= start),
+                 "end": o.get("reset") if o else None}
+            out.append(_with_basis(w, o, fb.get(f"limit_tokens_{mw['key']}"), lambda: week_peak(mev, now, days)))
         return out
 
     def _quota(self, a, files, ev, blk_tokens, blk_end, today):

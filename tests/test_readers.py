@@ -49,7 +49,13 @@ def main():
     ])
     cfgmod.APP_DIR = f"{tmp}/app"
     write(f"{tmp}/app/claude/s.json", {"_saved": NOW, "rate_limits": {
-        "five_hour": {"used_percentage": 37, "resets_at": ISO(NOW + 7200)}, "seven_day": {"used_percentage": 64, "resets_at": ISO(NOW + 86400)}}})
+        "five_hour": {"used_percentage": 37, "resets_at": ISO(NOW + 7200)}, "seven_day": {"used_percentage": 64, "resets_at": ISO(NOW + 86400)},
+        "model_scoped": [{"display_name": "Fable", "utilization": 0.25, "resets_at": ISO(NOW + 3 * 86400)}]}})
+    write(f"{tmp}/claude/C--proj/b.jsonl", [
+        {"type": "assistant", "timestamp": ISO(NOW - 20), "cwd": "C:\\proj", "sessionId": "b", "requestId": "r2",
+         "message": {"id": "m2", "model": "claude-fable-5-1", "stop_reason": "end_turn",
+                     "usage": {"input_tokens": 100, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "output_tokens": 50}}},
+    ])
     write(f"{tmp}/claude/C--proj/a.jsonl", [
         {"type": "assistant", "timestamp": ISO(NOW - 10), "cwd": "C:\\proj", "sessionId": "a", "requestId": "r1",
          "message": {"id": "m1", "model": "claude-x", "stop_reason": "end_turn",
@@ -80,8 +86,10 @@ def main():
         ("codex fresh tokens", s["codex"]["today"], 1600),
         ("codex quota windows", [round(w["pct"], 1) for w in s["codex"]["quota"].get("windows", [])], [42.5, 12.0]),
         ("codex quota labels", [w["label"] for w in s["codex"]["quota"].get("windows", [])], ["5h", "7d"]),
-        ("claude dedupe + fresh", s["claude"]["today"], 1210),
-        ("claude statusline quota", [w["pct"] for w in s["claude"]["quota"].get("windows", [])], [37.0, 64.0]),
+        ("claude dedupe + fresh", s["claude"]["today"], 1360),
+        ("claude statusline quota", [w["pct"] for w in s["claude"]["quota"].get("windows", [])], [37.0, 64.0, 25.0]),
+        ("claude 5h / 7d / Fable windows", [(w["label"], w["tokens"], w["basis"], round(w["pct"])) for w in s["claude"]["windows"]],
+         [("5h", 1360, "official", 37), ("7d", 1360, "official", 64), ("Fable", 150, "official", 25)]),
         ("local quota", s["local"]["quota"]["kind"], "unlimited"),
     ]
     bad = 0
