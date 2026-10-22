@@ -83,7 +83,7 @@ class DemoEngine:
                           "waiting": waiting, "today": int(today * grow), "today_cache": cache, "requests_today": reqs,
                           "week": w7[0], "models": [], "windows": windows, "loaded": ["qwen3:8b"] if local else None,
                           "quota_kind": kind, "requests": {"used": reqs, "limit": 1000} if reqs else None, "visible": True,
-                          "daily": daily, "plans": plans.for_type(tid)})
+                          "daily": daily, "plans": plans.for_type(tid), "read_quota": not local})
         for tid, name, color in IDLE_TYPES:
             types.append({"id": tid, "name": name, "color": color, "local": False, "running": 0, "working": 0, "waiting": 0,
                           "today": 0, "today_cache": 0, "requests_today": 0, "week": 0, "models": [], "loaded": None,

@@ -109,8 +109,8 @@
     return el;
   }
 
-  // "Read quota": re-read the logs and the status line now, and learn from any new limit hit; the message says
-  // what there is (the official %, an estimate from a limit hit, or nothing yet). Nothing is opened.
+  // "Read quota": Python asks the agent's CLI for its quota where it can (Claude Code's /usage, Codex's rate
+  // limits), re-reads the logs, and says what there is: the official %, an estimate from a limit hit, or why not.
   async function readQuota(id, btn) {
     if (!S.api || btn.disabled) return;
     btn.disabled = true; btn.textContent = "Reading…";
@@ -367,10 +367,8 @@
     const box = el.querySelector(".bars");
     while (box.children.length < wins.length) box.appendChild(makeBar());
     while (box.children.length > wins.length) box.lastChild.remove();
-    let noQuota = false;
     wins.forEach((w, i) => {
       const row = box.children[i], d = describeWin(w, t.quota_kind === "unlimited");
-      noQuota = noQuota || d.text === "no quota";
       row.querySelector(".k").textContent = w.label || w.key;
       row.querySelector(".tok").textContent = fmt(w.tokens);
       const p = row.querySelector(".pct");
@@ -387,8 +385,11 @@
     if (day && day.end) resets.push(["today", until(day.end)]);
     el.querySelector(".note").textContent = resets.length ? resets.map(([k, t], i) => `${k} ${i ? "" : "resets "}in ${t}`).join(" · ")
       : w5.end ? `5h block ends in ${until(w5.end)}` : "";
-    // no official % anywhere on the card, from an agent whose CLI reports one: offer to read it
-    el.querySelector(".readq").hidden = !(t.read_quota && noQuota && !wins.some((w) => w.basis === "official"));
+    // "Read quota" on every card but local models; its tooltip says when the CLI was last asked and what it said
+    const rq = el.querySelector(".readq"), lr = t.last_read || {};
+    rq.hidden = !t.read_quota;
+    const mins = lr.at ? Math.round((Date.now() / 1000 - lr.at) / 60) : null;
+    rq.title = mins === null ? "" : `Last read ${mins < 1 ? "just now" : `${mins} min ago`}${lr.message ? `: ${lr.message}` : ""}`;
     const meta = [`today <b class="mono">${fmt(t.today)}</b>`];
     if (t.today_cache) meta.push(`cache <b class="mono">${fmt(t.today_cache)}</b>`);
     if (t.requests) meta.push(`req <b class="mono">${t.requests.used}${t.requests.limit ? "/" + t.requests.limit : ""}</b>`);

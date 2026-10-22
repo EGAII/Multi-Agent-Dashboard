@@ -34,6 +34,9 @@ LIMITS_FILE = os.path.join(APP_DIR, "limits.json")  # limits learned from the ra
 DEFAULT_CONFIG = {
     "refresh_seconds": 3,
     "usage_refresh_seconds": 15,
+    # ask Claude Code (/usage) and Codex (its rate limits) for the official quota in the background, this often
+    "quota_read": True,
+    "quota_read_minutes": 5,
     "always_on_top": True,
     "history_days": 31,
     "agents": [

@@ -3,7 +3,7 @@ import os
 import threading
 import time
 
-from . import claude_app, plans
+from . import claude_app, plans, quota_read
 from . import config as cfgmod
 from .procs import Scanner
 from .usage import UsageModel
@@ -34,11 +34,34 @@ class Engine:
             self.agents = agents
             return agents, self.summary
 
+    def read_quota_now(self, type_id):
+        """Ask the agent's own CLI for its quota (quota_read.py); the windows feed the next summary."""
+        r = quota_read.READERS[type_id]()
+        self.usage.reads[type_id] = r
+        return r
+
     def read_quota(self, type_id):
-        """Re-read the logs and the status line now; -> (windows with an official %, limits learned from hits)."""
+        """"Read quota": ask the CLI now where there is a way (Claude Code, Codex), then re-read the logs.
+        -> (the CLI's answer or None, windows with an official %, limits learned from hits)."""
+        r = self.read_quota_now(type_id) if type_id in quota_read.READERS else None
         self.tick(force_usage=True)
         s = self.summary.get(type_id) or {}
-        return [w for w in s.get("windows", []) if w.get("basis") == "official"], s.get("hit_limits") or {}
+        return r, [w for w in s.get("windows", []) if w.get("basis") == "official"], s.get("hit_limits") or {}
+
+    def _read_loop(self):
+        """Read the quota of the agents in use at start, then every few minutes; half-hourly while one has none."""
+        while not self.summary and not self._stop.is_set():
+            self._stop.wait(0.5)
+        every, next_at = self.cfg.get("quota_read_minutes", 5) * 60, {}
+        while not self._stop.is_set():
+            for tid in quota_read.READERS:
+                if time.time() >= next_at.get(tid, 0) and (self.summary.get(tid) or {}).get("visible"):
+                    try:
+                        ok = self.read_quota_now(tid)["ok"]
+                    except Exception:  # a CLI that misbehaves must not stop the others
+                        ok = False
+                    next_at[tid] = time.time() + (every if ok else max(every, 1800))
+            self._stop.wait(20)
 
     def run(self, on_update):
         def loop():
@@ -53,6 +76,8 @@ class Engine:
                 first = False
                 self._stop.wait(self.cfg.get("refresh_seconds", 3))
         threading.Thread(target=loop, daemon=True).start()
+        if self.cfg.get("quota_read", True):
+            threading.Thread(target=self._read_loop, daemon=True).start()
 
     def stop(self):
         self._stop.set()
@@ -90,8 +115,9 @@ class Engine:
                              | {"loaded": s.get("loaded"), "quota_kind": q["kind"], "requests": requests,
                                 "visible": bool(s.get("visible")), "daily": s.get("daily"),
                                 "plans": plans.for_type(s["id"]), "hit_limits": s.get("hit_limits") or {},
-                                # its logs or status line can carry the official quota, so "Read quota" re-reads them
-                                "read_quota": conf.get(s["id"], {}).get("quota", {}).get("kind") == "from_log"})
+                                # "Read quota" on every card but local models: it asks the CLI where it can
+                                "read_quota": not conf.get(s["id"], {}).get("local"),
+                                "last_read": {k: v for k, v in (self.usage.reads.get(s["id"]) or {}).items() if k != "windows"}})
         agents = []
         for a in sorted(self.agents, key=lambda a: (STATUS_ORDER.get(a.status, 9), a.type_name, a.name)):
             kind, label = a.surface

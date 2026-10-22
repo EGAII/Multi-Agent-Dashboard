@@ -509,6 +509,8 @@ class DayStore:
             pass  # read-only home: the page still shows what the logs have
 
 
+READ_MAX_AGE = 30 * 60  # a quota read from the agent's CLI counts as current for this long
+WINDOW_GRACE = 300  # a provider starts a window at its first request, which the log may stamp a few seconds earlier
 HIT_WINDOWS = {"five_hour": ("5h", 5), "seven_day": ("7d", 168)}  # limit type in the logs -> window key, hours
 HIT_MAX_AGE = 25 * 86400  # Claude Code deletes transcripts after 30 days: an older hit's window is no longer complete
 
@@ -576,6 +578,7 @@ class UsageModel:
         self.cache = LogCache()
         self.store = DayStore(days_file)
         self.hit_store = HitStore(limits_file)
+        self.reads = {}  # agent type id -> the last quota read from its CLI (quota_read.py), set by the engine
         self.by_type = {}
         self.summary = {}
         self.overview = {"days": {}, "models": {"7d": [], "30d": []}}
@@ -668,16 +671,20 @@ class UsageModel:
         self.summary = out
         return out
 
-    @staticmethod
-    def _official(a, files):
-        """Rate-limit windows as the provider reports them: Codex session logs, or Claude's status line (account-wide)."""
+    def _official(self, a, files):
+        """Rate-limit windows as the provider reports them: a recent read from the agent's own CLI (Claude Code's
+        /usage, Codex's rate limits), else Codex's session logs or Claude's status line (account-wide)."""
         if a.get("quota", {}).get("kind") != "from_log":
             return []
+        read = self.reads.get(a["id"]) or {}
+        fresh = read.get("ok") and time.time() - read.get("at", 0) < READ_MAX_AGE
         if a["reader"] == "codex":
             latest = max((f for f in files if f.rate_limits), key=lambda f: f.rate_ts, default=None)
+            if fresh and (not latest or read["at"] >= latest.rate_ts):
+                return read["windows"]
             return official_windows(latest.rate_limits, latest.rate_ts) if latest else []
         if a["reader"] == "claude":
-            return official_windows(read_statusline_limits(), time.time())
+            return read["windows"] if fresh else official_windows(read_statusline_limits(), time.time())
         return []
 
     def _windows(self, a, files, ev, prompts, now):
@@ -698,10 +705,12 @@ class UsageModel:
         q = a.get("quota") or {}
         fb = q.get("fallback") or q
         out = []
-        for key, hours in (("5h", 5), ("7d", 168)):
+        # the provider reports windows, but no 5-hour or weekly one (Codex's free plan has only 30 days): show just those
+        standard = (("5h", 5), ("7d", 168)) if official or not other else ()
+        for key, hours in standard:
             o = official.get(key)
             if o and o.get("reset"):  # count over the provider's own window
-                start, end = o["reset"] - hours * 3600, o["reset"]
+                start, end = o["reset"] - hours * 3600 - WINDOW_GRACE, o["reset"]
             elif key == "5h":
                 _, end, _ = five_hour_block(ev, now)
                 start = end - hours * 3600 if end else now  # no active block: nothing in it yet
@@ -711,7 +720,7 @@ class UsageModel:
             out.append(_with_basis({"key": key, "label": key, "end": end, **_counts(ev, prompts, start)}, o, limit))
         for label, o in sorted(other.items(), key=lambda kv: float(kv[1]["window_minutes"])):
             mins = float(o["window_minutes"])
-            start = (o["reset"] if o.get("reset") else now) - mins * 60
+            start = o["reset"] - mins * 60 - WINDOW_GRACE if o.get("reset") else now - mins * 60
             name = f"{round(mins / 60)}-hour" if mins < 1440 else f"{round(mins / 1440)}-day"
             out.append(_with_basis({"key": label, "label": label, "name": name, "end": o.get("reset"),
                                     **_counts(ev, prompts, start)}, o, None))

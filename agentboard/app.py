@@ -85,23 +85,26 @@ class Api:
         return {"pinned": self._pinned, "maximized": self._restore is not None}
 
     def read_quota(self, type_id):
-        """Re-read an agent type's quota now, from its logs and the status line, and say what there is: the official
-        %, or a limit learned from a rate limit you hit. Nothing is opened and nothing goes over the network."""
+        """Read an agent type's quota now: ask its CLI where there is a way (Claude Code's /usage, Codex's rate
+        limits; see core/quota_read.py), re-read its logs, and say what there is."""
+        name = next((a["name"] for a in self._cfg["agents"] if a["id"] == type_id), type_id)
         if getattr(self._engine, "demo", False):
-            return {"ok": True, "found": False, "message": "Demo: this would re-read the logs and the status line"}
+            return {"ok": True, "found": False, "message": f"Demo: this would ask {name} for its quota"}
         try:
-            wins, hits = self._engine.read_quota(type_id)
+            r, wins, hits = self._engine.read_quota(type_id)
             self._snap = self._engine.snapshot()
         except Exception as e:  # report instead of breaking the page
-            return {"ok": False, "found": False, "message": f"Could not re-read: {e!r}"}
+            return {"ok": False, "found": False, "message": f"Could not read the quota: {e!r}"}
         if wins:
-            return {"ok": True, "found": True,
-                    "message": "Quota read: " + " · ".join(f"{w['label']} {w['pct']:.0f}%" for w in wins)}
+            return {"ok": True, "found": True, "message": f"{name}: " + " · ".join(f"{w['label']} {w['pct']:.0f}%" for w in wins)}
         if hits:
             key, h = next(iter(hits.items()))
             when = dt.datetime.fromtimestamp(h["last"]).strftime("%b %d").replace(" 0", " ")
-            return {"ok": True, "found": True, "message": f"No official %: {key} estimated from your limit hit on {when}"}
-        return {"ok": False, "found": False, "message": "No official % here; it's learned when you next hit a limit"}
+            note = f"{r['message']}. " if r and r.get("message") else ""
+            return {"ok": True, "found": True, "message": f"{note}{key} estimated from your limit hit on {when}"}
+        if r:
+            return {"ok": False, "found": False, "message": r["message"] or f"{name} reported no quota"}
+        return {"ok": False, "found": False, "message": f"{name} doesn't share its quota; pick a plan to estimate it"}
 
     def jump(self, key):
         if getattr(self._engine, "demo", False):

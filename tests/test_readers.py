@@ -90,6 +90,15 @@ def main():
     free = FileState("free.jsonl", "codex", rate_ts=NOW,
                      rate_limits={"primary": {"used_percent": 3.0, "window_minutes": 43200, "resets_at": NOW + 20 * 86400}})
     free_wins = m._windows(next(a for a in cfg["agents"] if a["id"] == "codex"), [free], [], [], NOW)
+    # a quota read from the CLI (Claude Code's /usage) wins over the status line while it is recent
+    claude_cfg = next(a for a in cfg["agents"] if a["id"] == "claude")
+    m.reads["claude"] = {"ok": True, "at": NOW, "windows": [
+        {"label": "5h", "pct": 42.0, "reset": NOW + 3600, "window_minutes": 300},
+        {"label": "7d", "pct": 12.0, "reset": NOW + 86400, "window_minutes": 10080},
+        {"label": "Fable", "pct": 30.0, "reset": NOW + 86400, "window_minutes": 10080, "scoped": True}]}
+    read_wins = [(w["label"], w["basis"], w["pct"]) for w in m._windows(claude_cfg, m.by_type["claude"], [], [], NOW)]
+    m.reads["claude"]["at"] = NOW - 3600  # an hour old: back to the status line
+    stale_wins = [w["pct"] for w in m._windows(claude_cfg, m.by_type["claude"], [], [], NOW)]
     # a rate limit hit teaches the 5h limit: the tokens from the window's start up to the hit
     hit_at, big = NOW - 3 * 86400, {"input_tokens": 0, "cache_creation_input_tokens": 0, "output_tokens": 30000}
     old = NOW - 40 * 86400  # too old: Claude Code has deleted most of that window's logs by now
@@ -135,8 +144,10 @@ def main():
         ("limit hit: 5h learned from the window's tokens", hit_limits.get("5h", {}).get("tokens"), 60000),
         ("limit hit: kept in limits.json, the 40-day-old hit left out", kept, [("five_hour", 60000)]),
         ("limit hit: left out once a bigger window is seen", HitStore(f"{tmp}/limits.json").learned("claude", seen={"5h": 100_000}), {}),
-        ("codex 30-day window (free plan)", [(w["label"], w["basis"], w["pct"], w.get("name")) for w in free_wins],
-         [("5h", None, None, None), ("7d", None, None, None), ("30d", "official", 3.0, "30-day")]),
+        ("codex 30-day window only (free plan)", [(w["label"], w["basis"], w["pct"], w.get("name")) for w in free_wins],
+         [("30d", "official", 3.0, "30-day")]),
+        ("claude /usage read: 5h, 7d, Fable", read_wins, [("5h", "official", 42.0), ("7d", "official", 12.0), ("Fable", "official", 30.0)]),
+        ("claude /usage read: stale after 30 min", stale_wins, [37.0, 64.0, 25.0]),
     ]
     bad = 0
     for name, got, want in checks:
