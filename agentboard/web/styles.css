@@ -430,6 +430,7 @@ body.still .page[data-pos], body.still .segmented * { transition: none !importan
 .ctx-item { width: 100%; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border-radius: 999px; font-size: 12.5px; }
 .ctx-item:hover, .ctx-item:focus-visible { background: var(--hover); outline: none; }
 .ctx-item .icon { width: 14px; height: 14px; color: var(--ink-3); }
+.ctx-item[hidden] { display: none; }  /* Stop watching shows only on a sleeping session */
 .ctx-label { padding: 6px 10px 2px; font-size: 11px; color: var(--ink-3); }
 .ctx-sw { display: flex; gap: 6px; padding: 4px 10px 6px; }
 .sw { width: 20px; height: 20px; border-radius: 50%; background: var(--hl); border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--line-strong); }

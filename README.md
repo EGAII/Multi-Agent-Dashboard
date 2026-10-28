@@ -7,7 +7,7 @@ A compact, landscape, always-on-top Windows panel for all your coding agents.
 - **Usage page**: a monitor (card) per agent type, with a bar for each limit window: the 5-hour window, the last 7 days and, for Claude, Fable's own weekly window. Each bar shows tokens used as a % of the quota. The small **+** adds a monitor for any agent type, and **× Remove** hides one.
 - **Overview page**: each model's share of your tokens over 7 or 30 days, and a calendar of tokens per day, a month at a time with arrows to go back, where each day's circle shows how much you used and how it split between agents.
 - **Columns**: small buttons in the toolbar lay out every page in 1, 2 or 3 columns. It is one setting for all pages.
-- **Pin and highlight**: right-click an agent to pin it, so it stays listed under the tiles, or to mark it with a colour.
+- **Pin and highlight**: right-click an agent to pin it, so it stays listed under the tiles, or to mark it with a colour. On a sleeping session, **Stop watching** takes it off AgentBoard and leaves the session itself alone.
 - **Your order**: drag the agent tiles, and the sessions in a list, to put them in the order you want.
 - **Click an agent** to open it exactly where it runs:
   - a Claude desktop session opens in the Claude app;
@@ -207,8 +207,9 @@ Right-click an agent, in any list, to open its menu:
 - **Pin to top** keeps the session in a **Pinned** list under the tiles, which shows whichever tile is open. Pinned sessions also come first in every list, with a pin icon. **Unpin** removes it.
 - **Highlight** marks the row with one of six colours: a stripe on the left and a light tint. **×** removes the colour.
 - **Open** does the same as a click.
+- **Stop watching**, on a sleeping (idle) session only, takes it off AgentBoard: out of the tiles, the lists, Pinned and the running, working and need-you counts. Nothing else happens to it: its process keeps sleeping in the background and the Claude app still has it. If it wakes up (working, or waiting for you), AgentBoard watches it again.
 
-Pins and colours belong to the session, not the process: the Claude app's session id, or else the CLI session file. They stay when AgentBoard or the PC restarts, and AgentBoard remembers them on this PC. A Claude desktop session keeps them even when the app restarts its agent process.
+Pins, colours and stopped sessions belong to the session, not the process: the Claude app's session id, or else the CLI session file. They stay when AgentBoard or the PC restarts, and AgentBoard remembers them on this PC. A Claude desktop session keeps them even when the app restarts its agent process.
 
 ![The right-click menu on a pinned, highlighted session](docs/agents-pinned.png)
 

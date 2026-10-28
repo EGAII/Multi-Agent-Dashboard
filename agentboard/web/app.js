@@ -361,7 +361,8 @@
   function updateCard(el, t) {
     el.style.setProperty("--c", t.color);
     el.querySelector("h3").textContent = t.name;
-    el.querySelector(".run").textContent = t.running ? `${t.running} running` : t.local ? "local" : "not running";
+    const running = S.snap ? watched(S.snap.agents).filter((a) => a.type_id === t.id).length : t.running;
+    el.querySelector(".run").textContent = running ? `${running} running` : t.local ? "local" : "not running";
     el.querySelector(".plan-name").textContent = planLabel(t);
     const wins = windowsOf(t);
     const box = el.querySelector(".bars");
@@ -428,23 +429,33 @@
   const rows = new Map();      // agent key -> row button in the open type's list
   const pinRows = new Map();   // agent key -> row button in the Pinned list
 
-  // Pins and highlight colours for the sessions you care about, by session id (sid), kept in this window's storage.
+  // Pins and highlight colours for the sessions you care about, and the sleeping sessions you stopped watching
+  // ("gone"), by session id (sid), kept in this window's storage.
   const HL = { red: "#e5484d", orange: "#f2811d", yellow: "#d9a400", green: "#2f9e5b", blue: "#3b82f6", purple: "#8b5cf6" };
   const MARK = (() => {
     try {
       const m = JSON.parse(store.get("ab.marks", "{}"));
-      return { pins: Array.isArray(m.pins) ? m.pins : [], hl: m.hl && typeof m.hl === "object" ? m.hl : {} };
+      return { pins: Array.isArray(m.pins) ? m.pins : [], hl: m.hl && typeof m.hl === "object" ? m.hl : {},
+               gone: Array.isArray(m.gone) ? m.gone : [] };
     } catch (e) {
-      return { pins: [], hl: {} };
+      return { pins: [], hl: {}, gone: [] };
     }
   })();
   function saveMarks() {
-    MARK.pins = MARK.pins.slice(-100);  // sessions come and go; keep the list from growing forever
+    MARK.pins = MARK.pins.slice(-100);  // sessions come and go; keep the lists from growing forever
+    MARK.gone = MARK.gone.slice(-300);
     const keys = Object.keys(MARK.hl);
     for (const k of keys.slice(0, Math.max(0, keys.length - 100))) delete MARK.hl[k];
     store.set("ab.marks", JSON.stringify(MARK));
   }
   const isPinned = (a) => MARK.pins.includes(a.sid);
+  // The sessions AgentBoard watches: all but the sleeping ones you stopped watching. Their processes are left alone;
+  // one that wakes up (working, or waiting for you) is watched again.
+  function watched(agents) {
+    const woke = (agents || []).filter((a) => a.status !== "idle" && MARK.gone.includes(a.sid)).map((a) => a.sid);
+    if (woke.length) { MARK.gone = MARK.gone.filter((s) => !woke.includes(s)); saveMarks(); }
+    return (agents || []).filter((a) => !MARK.gone.includes(a.sid));
+  }
   const pinnedOf = (list) => list.filter(isPinned).sort((x, y) => MARK.pins.indexOf(x.sid) - MARK.pins.indexOf(y.sid));
 
   function makeTile(id) {
@@ -632,7 +643,7 @@
   }
 
   function renderAgents(snap) {
-    const all = snap.agents || [];
+    const all = watched(snap.agents);
     const box = $("types"), detail = $("detail");
     if (!all.length) {
       tiles.clear(); rows.clear(); pinRows.clear(); S.open = null;
@@ -719,6 +730,7 @@
     $("ctx-pin-label").textContent = pinned ? "Unpin" : "Pin to top";
     setIcon($("ctx-pin").querySelector(".icon"), pinned ? "push-pin-slash" : "push-pin");
     $("ctx-sw").querySelectorAll(".sw").forEach((s) => s.setAttribute("aria-pressed", String(s.dataset.hl === cur)));
+    $("ctx-forget").hidden = !row.classList.contains("s-idle");  // only a sleeping session
     const m = $("ctx");
     m.hidden = false;
     const r = row.getBoundingClientRect();
@@ -751,6 +763,15 @@
       if (s) applyMark((sid) => { if (s.dataset.hl) MARK.hl[sid] = s.dataset.hl; else delete MARK.hl[sid]; });
     });
     $("ctx-open").addEventListener("click", () => { const r = ctxRow; closeCtx(); if (r) jump(r); });
+    $("ctx-forget").addEventListener("click", () => {
+      const name = ctxRow && ctxRow.querySelector(".ntext").textContent;
+      applyMark((sid) => {
+        MARK.gone = [...MARK.gone.filter((s) => s !== sid), sid];
+        MARK.pins = MARK.pins.filter((s) => s !== sid);
+      });
+      if (S.snap) renderTotals(S.snap);
+      toast(`Stopped watching “${name}”; it shows again if it wakes up`);
+    });
     document.addEventListener("mousedown", (e) => {
       if (!$("ctx").hidden && !e.target.closest("#ctx")) closeCtx();
       if (S.addOpen && !e.target.closest("#add-panel, #btn-add")) openAdd(false);  // a click elsewhere closes the add panel
@@ -1009,13 +1030,15 @@
   }
 
   function renderTotals(snap) {
-    const t = snap.totals || {};
+    const t = snap.totals || {}, ag = watched(snap.agents);  // counts leave out the sessions you stopped watching
+    const working = ag.filter((a) => a.status === "working").length;
+    const waiting = ag.filter((a) => a.status === "your_turn" || a.status === "approval").length;
     $("t-today").textContent = fmt(t.today);
-    $("t-agents").textContent = t.agents || 0;
-    $("t-working").textContent = t.working || 0;
-    $("t-waiting").textContent = t.waiting || 0;
-    $("t-waiting-wrap").classList.toggle("attn", (t.waiting || 0) > 0);
-    $("agent-count").textContent = t.agents || 0;
+    $("t-agents").textContent = ag.length;
+    $("t-working").textContent = working;
+    $("t-waiting").textContent = waiting;
+    $("t-waiting-wrap").classList.toggle("attn", waiting > 0);
+    $("agent-count").textContent = ag.length;
     const err = snap.error;
     $("banner").hidden = !err;
     $("banner-text").textContent = err ? `Last refresh failed: ${err}` : "";
@@ -1133,7 +1156,7 @@
     checkLayout();
   }
   const openPlanFor = (id) => { const c = document.querySelector(`#cards .card[data-id="${id}"] .plan-chip`); if (c) openPlan(id, c); };
-  window.agentboard = { showPage, setTheme, openFold, toggleMax, setCols, openAdd, addMonitor, removeMonitor, markSession, rightClick,
+  window.agentboard = { showPage, setTheme, openFold, toggleMax, setCols, openAdd, addMonitor, removeMonitor, markSession, rightClick, MARK,
                         setPlan, openPlanFor, closePlan, stepMonth };
 
   function wire() {
