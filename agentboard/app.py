@@ -196,8 +196,26 @@ class Api:
         self._window.destroy()  # the closed event stops the engine and helpers
 
 
+def _serve_fresh():
+    """pywebview's local server means to send no-cache headers, but the file response it returns replaces them, so
+    the window (whose WebView2 cache is kept between runs) could show an old page for hours after an update. Every
+    file now says "check first"; its ETag and Last-Modified keep that check cheap when nothing changed."""
+    import bottle
+    if getattr(bottle.static_file, "_agentboard", False):
+        return
+    static_file = bottle.static_file
+
+    def fresh(*args, **kwargs):
+        r = static_file(*args, **kwargs)
+        r.set_header("Cache-Control", "no-cache")
+        return r
+    fresh._agentboard = True
+    bottle.static_file = fresh
+
+
 def create(demo=False, x=None, y=None):
     """Create the window (not yet shown). Returns the Api; call webview.start(api._start, ...) to run."""
+    _serve_fresh()
     cfg = cfgmod.load()
     api = Api(cfg, demo=demo)
     if x is None:
